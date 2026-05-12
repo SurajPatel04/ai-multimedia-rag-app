@@ -2,9 +2,9 @@ from fastapi import APIRouter, status, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from jose import jwt, JWTError
 from app.models import User, RefreshToken
-from schemas.auth import RegisterRequest, SignInRequest
+from app.schemas.auth import RegisterRequest, SignInRequest
 from app.core.security import hash, verifyPassword
-from services import create_both_tokens
+from app.services.auth_service import create_both_tokens
 from app.core.config import settings
 
 
