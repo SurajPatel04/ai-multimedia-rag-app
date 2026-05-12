@@ -3,9 +3,9 @@ import AppRouter from "@/routes/AppRouter";
 
 function App() {
   return (
-    <main className="dark relative min-h-screen overflow-hidden bg-black px-4 py-10 text-white">
-      <BackgroundRippleEffect />
-      <div className="relative z-10 mx-auto min-h-[calc(100vh-5rem)] w-full">
+    <main className="dark relative min-h-screen overflow-hidden bg-black text-white">
+      <BackgroundRippleEffect cols={22} opacity={30} rows={7} />
+      <div className="relative z-10 min-h-screen w-full">
         <AppRouter />
       </div>
     </main>

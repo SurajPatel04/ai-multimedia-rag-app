@@ -37,7 +37,11 @@ export const authService = {
   },
 
   logout: async (): Promise<void> => {
-    await api.post("/auth/logout");
+    await api.post("/auth/signOut");
+  },
+
+  refreshToken: async (): Promise<void> => {
+    await api.post("/auth/refresh");
   },
 
   fetchProfile: async (): Promise<User> => {

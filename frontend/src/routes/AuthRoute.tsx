@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
+import { useSilentTokenRefresh } from "@/hooks/useSilentTokenRefresh";
 import { authService } from "@/services/authService";
 
 type AuthRouteProps = {
@@ -16,6 +17,7 @@ export function ProtectedRoute({
   redirectTo = "/login",
 }: AuthRouteProps) {
   const [isAllowed, setIsAllowed] = useState<boolean | null>(null);
+  useSilentTokenRefresh(isAllowed === true);
 
   useEffect(() => {
     const checkAuth = async () => {

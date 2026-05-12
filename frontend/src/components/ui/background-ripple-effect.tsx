@@ -1,15 +1,19 @@
 "use client";
-import React, { useMemo, useRef, useState } from "react";
+import React, { memo, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export const BackgroundRippleEffect = ({
   rows = 8,
   cols = 27,
   cellSize = 56,
+  interactive = false,
+  opacity = 40,
 }: {
   rows?: number;
   cols?: number;
   cellSize?: number;
+  interactive?: boolean;
+  opacity?: 20 | 30 | 40 | 50 | 60;
 }) => {
   const [clickedCell, setClickedCell] = useState<{
     row: number;
@@ -22,7 +26,7 @@ export const BackgroundRippleEffect = ({
     <div
       ref={ref}
       className={cn(
-        "absolute inset-0 h-full w-full",
+        "pointer-events-none absolute inset-0 h-full w-full",
         "[--cell-border-color:var(--color-neutral-300)] [--cell-fill-color:var(--color-neutral-100)] [--cell-shadow-color:var(--color-neutral-500)]",
         "dark:[--cell-border-color:var(--color-neutral-700)] dark:[--cell-fill-color:var(--color-neutral-900)] dark:[--cell-shadow-color:var(--color-neutral-800)]",
       )}
@@ -31,7 +35,14 @@ export const BackgroundRippleEffect = ({
         <div className="pointer-events-none absolute inset-0 z-[2] h-full w-full overflow-hidden" />
         <DivGrid
           key={`base-${rippleKey}`}
-          className="mask-radial-from-20% mask-radial-at-top opacity-60"
+          className={cn(
+            "mask-radial-from-20% mask-radial-at-top",
+            opacity === 20 && "opacity-20",
+            opacity === 30 && "opacity-30",
+            opacity === 40 && "opacity-40",
+            opacity === 50 && "opacity-50",
+            opacity === 60 && "opacity-60",
+          )}
           rows={rows}
           cols={cols}
           cellSize={cellSize}
@@ -39,10 +50,13 @@ export const BackgroundRippleEffect = ({
           fillColor="var(--cell-fill-color)"
           clickedCell={clickedCell}
           onCellClick={(row, col) => {
+            if (!interactive) {
+              return;
+            }
             setClickedCell({ row, col });
             setRippleKey((k) => k + 1);
           }}
-          interactive
+          interactive={interactive}
         />
       </div>
     </div>
@@ -66,17 +80,18 @@ type CellStyle = React.CSSProperties & {
   ["--duration"]?: string;
 };
 
-const DivGrid = ({
-  className,
-  rows = 7,
-  cols = 30,
-  cellSize = 56,
-  borderColor = "#3f3f46",
-  fillColor = "rgba(14,165,233,0.3)",
-  clickedCell = null,
-  onCellClick = () => {},
-  interactive = true,
-}: DivGridProps) => {
+const DivGrid = memo(function DivGrid(props: DivGridProps) {
+  const {
+    className,
+    rows = 7,
+    cols = 30,
+    cellSize = 56,
+    borderColor = "#3f3f46",
+    fillColor = "rgba(14,165,233,0.3)",
+    clickedCell = null,
+    onCellClick = () => {},
+    interactive = true,
+  } = props;
   const cells = useMemo(
     () => Array.from({ length: rows * cols }, (_, idx) => idx),
     [rows, cols],
@@ -130,4 +145,4 @@ const DivGrid = ({
       })}
     </div>
   );
-};
+});
