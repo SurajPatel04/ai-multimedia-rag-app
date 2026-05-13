@@ -181,7 +181,10 @@ async def refresh(request: Request):
 
         is_secure = (settings.ENV == "production")
 
-        response = JSONResponse({"message": "Tokens refreshed successfully"})
+        response = JSONResponse({
+            "success": True,
+            "message": "Tokens refreshed successfully"
+        })
 
         response.set_cookie(
             "access_token",

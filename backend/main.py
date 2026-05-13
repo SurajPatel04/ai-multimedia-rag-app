@@ -1,9 +1,14 @@
 from contextlib import asynccontextmanager
 from app.core.db import init_db
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.exception_handler import add_exception_handlers
+
+
 from app.router.auth import router as auth_router
 from app.router.user import router as user_router
-from fastapi.middleware.cors import CORSMiddleware
+from app.router.chat import router as chat_router
+from app.router.file_upload import router as upload_router
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
@@ -15,6 +20,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+add_exception_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +38,8 @@ API_V1 = "/api/v1"
 
 app.include_router(auth_router,prefix=API_V1)
 app.include_router(user_router,prefix=API_V1)
+app.include_router(chat_router,prefix=API_V1)
+app.include_router(upload_router,prefix=API_V1)
 
 
 @app.get("/")

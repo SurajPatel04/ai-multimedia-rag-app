@@ -18,13 +18,19 @@ async def get_me(current_user: str = Depends(get_current_user)):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-        return {
+
+        data = {
             'id': str(user.id),
             'first_name': user.first_name,
             'last_name': user.last_name,
             'email': user.email,
             'createdAt': user.createdAt,
             'updatedAt': user.updatedAt
+        }
+        return {
+            "success": True,
+            "message": "User fetched successfully",
+            "data": data
         }
     except HTTPException:
         raise
