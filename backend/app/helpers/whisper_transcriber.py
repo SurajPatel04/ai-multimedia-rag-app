@@ -3,6 +3,8 @@ from deepgram import DeepgramClient, PrerecordedOptions, DeepgramClientOptions
 from dotenv import load_dotenv
 from app.utils.video_to_audio_converter import convert_video_to_audio
 
+VIDEO_EXTENSIONS = {"mp4", "mkv", "mov", "avi", "webm", "flv"}
+
 load_dotenv()
 
 config = DeepgramClientOptions(
@@ -12,7 +14,7 @@ config = DeepgramClientOptions(
 deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"), config)
 
 
-def merge_utterances(utterances, max_words: int = 200):
+def merge_utterances(utterances, max_words: int = 80):
     """Merge small utterances into larger RAG-friendly chunks"""
     chunks = []
     current_text = ""
@@ -71,7 +73,7 @@ def transcribe_audio(file_path: str):
 
     ext = file_path.rsplit(".", 1)[-1].lower()
 
-    # ← convert video to audio if needed
+    # convert video to audio if needed
     if ext in VIDEO_EXTENSIONS:
         print(f"Video detected → converting to audio...")
         file_path = convert_video_to_audio(file_path)

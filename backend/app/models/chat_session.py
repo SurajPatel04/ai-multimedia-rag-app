@@ -1,12 +1,12 @@
-from beanie import Document, PydanticObjectId
+from beanie import Document, PydanticObjectId, Indexed
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone
 
 
 class ChatSession(Document):
-    session_id: str                        # links to LangGraph thread_id
-    user_id: PydanticObjectId             # which user owns this session
+    session_id: Indexed(str, unique=True)
+    user_id: Indexed(PydanticObjectId)
 
     title: Optional[str] = None
     is_active: bool = True

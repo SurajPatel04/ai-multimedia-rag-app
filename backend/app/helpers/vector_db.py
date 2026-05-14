@@ -3,70 +3,84 @@ from langchain_core.documents import Document
 import os
 import shutil
 
-FAISS_INDEX_PATH = "faiss_indexes/global"
+FAISS_BASE_PATH = "faiss_indexes"
 
 
-def store_vectors(session_id: str, chunks: list, embeddings):
-    """Add chunks to global FAISS index with session_id in metadata"""
+def get_user_index_path(user_id: str) -> str:
+    """Per-user FAISS index directory"""
+    return f"{FAISS_BASE_PATH}/{user_id}"
 
-    # tag every chunk with session_id
+
+def store_vectors(user_id: str, session_id: str, chunks: list, embeddings, file_name: str):
+    """Add chunks to per-user FAISS index with session_id + file_name in metadata"""
+
+    index_path = get_user_index_path(user_id)
+    os.makedirs(index_path, exist_ok=True)
+
     documents = [
         Document(
             page_content=doc.page_content,
             metadata={
                 **doc.metadata,
-                "session_id": session_id   # ← tag with session
+                "user_id":    user_id,
+                "session_id": session_id,
+                "file_name":  file_name
             }
         )
         for doc in chunks
     ]
 
-    os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
-
-    # if global index exists → merge, else create new
-    if os.path.exists(f"{FAISS_INDEX_PATH}/index.faiss"):
+    if os.path.exists(f"{index_path}/index.faiss"):
         store = FAISS.load_local(
-            FAISS_INDEX_PATH,
+            index_path,
             embeddings,
             allow_dangerous_deserialization=True
         )
-        store.add_documents(documents)     # ← merge into existing
+        store.add_documents(documents)
     else:
         store = FAISS.from_documents(
             documents=documents,
             embedding=embeddings
         )
 
-    store.save_local(FAISS_INDEX_PATH)
-    print(f"Stored {len(documents)} chunks for session: {session_id}")
+    store.save_local(index_path)
+    # print(f"Stored {len(documents)} chunks for user: {user_id}, session: {session_id}")
 
 
-def load_vector_store(embeddings):
-    """Load global FAISS index"""
+def load_vector_store(user_id: str, embeddings):
+    """Load per-user FAISS index"""
 
-    if not os.path.exists(f"{FAISS_INDEX_PATH}/index.faiss"):
-        raise FileNotFoundError("Global index not found")
+    index_path = get_user_index_path(user_id)
+
+    if not os.path.exists(f"{index_path}/index.faiss"):
+        raise FileNotFoundError(f"Index not found for user: {user_id}")
 
     return FAISS.load_local(
-        FAISS_INDEX_PATH,
+        index_path,
         embeddings,
         allow_dangerous_deserialization=True
     )
 
 
-def vector_search(session_id: str, query: str, embeddings, top_k: int = 3):
-    """Search only within session's chunks"""
-
+def vector_search(user_id: str, session_id: str, query: str, embeddings, top_k: int = 3, target_files: list = None):
     try:
-        store = load_vector_store(embeddings)
+        store = load_vector_store(user_id, embeddings)
     except FileNotFoundError:
         return []
 
-    # search more results then filter by session_id
+    # Always filter by session
+    search_filter = {"session_id": session_id}
+
+    if target_files:
+        search_filter["file_name"] = (
+            target_files[0] if len(target_files) == 1
+            else {"$in": target_files}
+        )
+
     results = store.similarity_search(
         query,
-        k=top_k * 10,   # fetch more to filter from
-        filter={"session_id": session_id}   # ← filter by session
+        k=top_k * 10,
+        filter=search_filter
     )
 
     return [
@@ -78,32 +92,38 @@ def vector_search(session_id: str, query: str, embeddings, top_k: int = 3):
     ]
 
 
-def delete_session_vectors(session_id: str, embeddings):
-    """
-    FAISS doesn't support deletion natively.
-    Rebuild index without the deleted session's chunks.
-    """
+def delete_session_vectors(user_id: str, session_id: str, embeddings):
+    """Remove one session's chunks, keep rest of user's data"""
+
+    index_path = get_user_index_path(user_id)
+
     try:
-        store = load_vector_store(embeddings)
+        store = load_vector_store(user_id, embeddings)
     except FileNotFoundError:
-        print(f"No global index found, nothing to delete for session: {session_id}")
+        print(f"No index found for user: {user_id}, nothing to delete")
         return
 
-    # get all docs except deleted session
-    remaining_docs = [
+    remaining = [
         Document(
             page_content=doc.page_content,
             metadata=doc.metadata
         )
-        for doc_id, doc in store.docstore._dict.items()
+        for _, doc in store.docstore._dict.items()
         if doc.metadata.get("session_id") != session_id
     ]
 
-    if remaining_docs:
-        new_store = FAISS.from_documents(remaining_docs, embeddings)
-        new_store.save_local(FAISS_INDEX_PATH)
+    if remaining:
+        new_store = FAISS.from_documents(remaining, embeddings)
+        new_store.save_local(index_path)
     else:
-        # no docs left → delete entire index
-        shutil.rmtree(FAISS_INDEX_PATH)
+        shutil.rmtree(index_path)
 
-    print(f"Deleted vectors for session: {session_id}")
+    # print(f"Deleted vectors for user: {user_id}, session: {session_id}")
+
+
+def delete_user_vectors(user_id: str):
+    """User deletes account — wipe everything"""
+    index_path = get_user_index_path(user_id)
+    if os.path.exists(index_path):
+        shutil.rmtree(index_path)
+        print(f"Deleted all vectors for user: {user_id}")

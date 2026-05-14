@@ -9,23 +9,23 @@ async def title_generator_node(state: State):
 
     print("----- TITLE GENERATOR NODE -----")
 
-    # ✅ Only generate title on first message
     if state.message_index > 0:
         return {}
 
+
+    system_prompt = """
+    Generate a short, concise title (max 6 words) for this chat session
+    based on the user's first message.
+    Return ONLY the title, nothing else.
+    Example: "Resume Analysis for John", "Audio File Summary"
+    """
     response = await llm.ainvoke([
-        SystemMessage(content="""
-Generate a short, concise title (max 6 words) for this chat session
-based on the user's first message.
-Return ONLY the title, nothing else.
-Example: "Resume Analysis for John", "Audio File Summary"
-"""),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=state.query)
     ])
 
     title = response.content.strip()
 
-    # ✅ Save title to ChatSession in MongoDB
     await ChatSession.find_one(
         ChatSession.session_id == state.session_id
     ).update({"$set": {"title": title}})
@@ -33,5 +33,5 @@ Example: "Resume Analysis for John", "Audio File Summary"
     print(f"Title generated: {title}")
 
     return {
-        "title": title      # ✅ save to state too
+        "title": title
     }

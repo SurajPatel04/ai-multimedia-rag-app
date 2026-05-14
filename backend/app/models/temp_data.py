@@ -29,16 +29,16 @@ class Utterance(BaseModel):
 
 
 class TempData(Document):
-    temp_id: str                            # ← tmp_uuid for vector DB reference
+    temp_id: str 
     user_id: PydanticObjectId
     file_url: str
     file_name: str
-    file_type: str                          # "pdf" | "audio" | "video"
+    file_type: str 
     content_type: str
-    full_text: Optional[str] = None         # ← for summarization
-    utterances: List[Utterance] = []        # ← for exact timestamps (audio/video)
-    chunks: List[ContentChunk] = []         # ← raw chunks for embedding later
-    embedded: bool = False                  # ← False until first message
+    full_text: Optional[str] = None 
+    utterances: List[Utterance] = []
+    chunks: List[ContentChunk] = [] 
+    embedded: bool = False  
     status: str = "processing"             # "processing" | "ready" | "error"
     createdAt: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)

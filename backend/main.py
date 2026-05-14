@@ -3,11 +3,12 @@ from app.core.db import init_db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.exception_handler import add_exception_handlers
-
+from langchain_community.vectorstores import FAISS
 
 from app.router.auth import router as auth_router
 from app.router.user import router as user_router
 from app.router.chat import router as chat_router
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.router.file_upload import router as upload_router
 
 @asynccontextmanager
@@ -46,4 +47,30 @@ app.include_router(upload_router,prefix=API_V1)
 async def root():
     return {
         "message": "Server running"
+    }
+
+@app.get("/debug/faiss")
+def debug_faiss():
+
+    vectorstore = FAISS.load_local(
+        "faiss_indexes/6a053ec9cf1d50cdb308773e",
+        GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001"
+        ),
+        allow_dangerous_deserialization=True
+    )
+
+    docs = []
+
+    for key, value in vectorstore.docstore._dict.items():
+
+        docs.append({
+            "id": key,
+            "content": value.page_content,
+            "metadata": value.metadata
+        })
+
+    return {
+        "total_docs": len(docs),
+        "documents": docs
     }

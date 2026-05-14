@@ -8,7 +8,6 @@ def stream_response(query: str, llm):
     for chunk in llm.stream(query):
         if chunk.content:
             full_response += chunk.content
-            # SSE format → must be "data: ...\n\n"
             yield f"data: {json.dumps({'type': 'text', 'data': chunk.content})}\n\n"
 
         if chunk.usage_metadata:
@@ -26,5 +25,4 @@ def stream_response(query: str, llm):
                 'total_cost':        round(total_cost, 6),
             })}\n\n"
 
-    # Tell client stream is done
     yield "data: [DONE]\n\n"

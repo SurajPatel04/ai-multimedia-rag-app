@@ -70,36 +70,53 @@ def _process_pdf_file(temp_id: str, file_path: str) -> dict:
     }
 
 
+
 def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
     print(f"Processing audio/video: {file_path}")
 
     result = transcribe_audio(file_path)
 
-    # convert rag_chunks to raw dicts for MongoDB
+    # ✅ Build full_text WITH timestamps embedded
+    # Format: [0:05 - 1:52] text\n\n[1:52 - 3:20] text...
+    def seconds_to_mmss(s: float) -> str:
+        m = int(s) // 60
+        sec = int(s) % 60
+        return f"{m}:{sec:02d}"
+
+    timestamped_lines = []
+    for chunk in result["rag_chunks"]:
+        start_fmt = seconds_to_mmss(chunk["start"])
+        end_fmt   = seconds_to_mmss(chunk["end"])
+        timestamped_lines.append(
+            f"[{start_fmt} - {end_fmt}] {chunk['text']}"
+        )
+
+    full_text_with_timestamps = "\n\n".join(timestamped_lines)
+
     chunks = [
         {
             "chunk_index": i,
             "text": chunk["text"],
             "metadata": {
                 "start": chunk["start"],
-                "end": chunk["end"],
+                "end":   chunk["end"],
             }
         }
         for i, chunk in enumerate(result["rag_chunks"])
     ]
 
     return {
-        "temp_id": temp_id,
-        "file_type": "audio",
-        "full_text": result["full_text"],
-        "utterances": result["utterances"],   # sentence-level for exact timestamps
-        "chunks": chunks,
-        "embedded": False,
-        "status": "ready"
+        "temp_id":    temp_id,
+        "file_type":  "audio",
+        "full_text":  full_text_with_timestamps,  # ✅ now has timestamps
+        "utterances": result["utterances"],
+        "chunks":     chunks,
+        "embedded":   False,
+        "status":     "ready"
     }
 
 
-def embed_and_store(session_id: str, temp_id: str, chunks: list, file_type: str, file_name: str = ""):
+def embed_and_store(user_id: str, session_id: str, temp_id: str, chunks: list, file_type: str, file_name: str = ""):
     """
     First message time — embed chunks and store in FAISS
     """
@@ -124,11 +141,11 @@ def embed_and_store(session_id: str, temp_id: str, chunks: list, file_type: str,
             )
         )
 
-    store_vectors(session_id, documents, embeddings)
+    store_vectors(user_id, session_id, documents, embeddings, file_name)
 
     print(
         f"Embedded {len(documents)} chunks "
-        f"for session: {session_id}"
+        f"for user: {user_id}, session: {session_id}"
     )
 
 def replace_file(temp_id: str, new_file_path: str) -> dict:

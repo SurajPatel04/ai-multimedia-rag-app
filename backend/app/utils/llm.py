@@ -7,6 +7,19 @@ load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
 llm = init_chat_model("openai:gpt-4o-mini", temperature=0, stream_usage=True)
+google_llm_lite = init_chat_model(
+    "gemini-2.5-flash-lite",
+    model_provider="google_genai",
+    temperature=0,
+    streaming=True
+)
+
+google_llm = init_chat_model(
+    "gemini-2.5-flash",
+    model_provider="google_genai",
+    temperature=0,
+    streaming=True,
+)
 
 INPUT_COST  = 0.150 / 1_000_000
 OUTPUT_COST = 0.600 / 1_000_000

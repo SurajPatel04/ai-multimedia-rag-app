@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends,
 from typing import List, Optional
 from app.dependencies.auth import get_current_user
 from app.utils.file_upload_supabase import upload_file_to_supabase
+from app.utils.video_to_audio_converter import VIDEO_EXTENSIONS
 from app.services.file_processor import process_file, replace_file, generate_temp_id
 from app.models.temp_data import TempData
 import shutil
@@ -28,24 +29,30 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
 
 async def save_file_locally(file: UploadFile) -> dict:
-    """Save uploaded file to temp folder with unique name"""
-
-    content = await file.read()
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{file.filename} exceeds 100MB limit"
-        )
-
-    file.file.seek(0)
 
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4().hex}{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
+    size = 0
+
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            size += len(chunk)
+
+            if size > MAX_FILE_SIZE:
+                buffer.close()
+                os.remove(file_path)
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{file.filename} exceeds 100MB limit"
+                )
+
+            buffer.write(chunk)
+
+    await file.close()
 
     return {
         "original_name": file.filename,
@@ -54,8 +61,7 @@ async def save_file_locally(file: UploadFile) -> dict:
         "path": file_path
     }
 
-
-@router.post("/")
+@router.post("")
 async def upload_files(
     files: List[UploadFile] = File(...),
     temp_id: Optional[str] = Form(None),     
@@ -117,7 +123,7 @@ async def upload_files(
                 TempData.temp_id == temp_id
             ).delete()
 
-            print("Deleted old docs:", deleted)
+            # print("Deleted old docs:", deleted)
 
             replaced_files = []
 

@@ -29,6 +29,8 @@ async def signUp(request: RegisterRequest):
             "success": True,
             "message": "Account created successfully"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -77,6 +79,8 @@ async def signIn(request: SignInRequest):
         )
         
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -116,6 +120,8 @@ async def signOut(request: Request):
         )
 
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
