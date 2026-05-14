@@ -57,7 +57,10 @@ def load_vector_store(embeddings):
 def vector_search(session_id: str, query: str, embeddings, top_k: int = 3):
     """Search only within session's chunks"""
 
-    store = load_vector_store(embeddings)
+    try:
+        store = load_vector_store(embeddings)
+    except FileNotFoundError:
+        return []
 
     # search more results then filter by session_id
     results = store.similarity_search(
@@ -80,7 +83,11 @@ def delete_session_vectors(session_id: str, embeddings):
     FAISS doesn't support deletion natively.
     Rebuild index without the deleted session's chunks.
     """
-    store = load_vector_store(embeddings)
+    try:
+        store = load_vector_store(embeddings)
+    except FileNotFoundError:
+        print(f"No global index found, nothing to delete for session: {session_id}")
+        return
 
     # get all docs except deleted session
     remaining_docs = [

@@ -11,3 +11,10 @@ venv/
 
 # OS files
 .DS_Store
+
+# Vector DB indexes
+faiss_indexes/
+
+# Optional
+*.faiss
+*.pkl

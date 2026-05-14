@@ -99,24 +99,30 @@ def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
     }
 
 
-def embed_and_store(session_id: str, temp_id: str, chunks: list, file_type: str):
+def embed_and_store(session_id: str, temp_id: str, chunks: list, file_type: str, file_name: str = ""):
     """
     First message time — embed chunks and store in FAISS
     """
 
-    documents = [
-        LangchainDocument(
-            page_content=chunk["text"],
-            metadata={
-                **chunk["metadata"],
-                "chunk_index": chunk["chunk_index"],
-                "file_type": file_type,
-                "session_id": session_id,
-                "temp_id": temp_id
-            }
+    documents = []
+    for chunk in chunks:
+        # Normalize: handle both dict and Pydantic ContentChunk objects
+        if hasattr(chunk, "model_dump"):
+            chunk = chunk.model_dump()
+
+        documents.append(
+            LangchainDocument(
+                page_content=chunk["text"],
+                metadata={
+                    **chunk["metadata"],
+                    "chunk_index": chunk["chunk_index"],
+                    "file_type": file_type,
+                    "file_name": file_name,
+                    "session_id": session_id,
+                    "temp_id": temp_id
+                }
+            )
         )
-        for chunk in chunks
-    ]
 
     store_vectors(session_id, documents, embeddings)
 
