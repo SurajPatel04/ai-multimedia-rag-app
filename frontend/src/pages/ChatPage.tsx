@@ -11,10 +11,12 @@ import {
   IconArrowLeft,
   IconDots,
   IconFile,
+  IconFileText,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLoader2,
   IconMessage,
+  IconMusic,
   IconPaperclip,
   IconPencil,
   IconPlus,
@@ -27,6 +29,7 @@ import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import { authService, type User } from "@/services/authService";
 import {
   uploadFiles,
+  cancelFile,
   type UploadedFileInfo,
 } from "@/services/fileUploadService";
 import {
@@ -36,6 +39,7 @@ import {
   type SSEEvent,
 } from "@/services/chatService";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { showToast } from "@/lib/toast";
 
 
 
@@ -51,13 +55,38 @@ const placeholders = [
 // Global Media Player
 let activeTimeUpdateRef: { element: HTMLMediaElement; listener: () => void } | null = null;
 
-const handlePlayMedia = (startSeconds: number, endSeconds: number) => {
-  const mediaElements = Array.from(document.querySelectorAll("video, audio")) as HTMLMediaElement[];
-  const mediaElement = mediaElements[mediaElements.length - 1];
+const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React.MouseEvent) => {
+  let mediaElement: HTMLMediaElement | null = null;
+
+  if (event) {
+    const button = event.currentTarget as HTMLElement;
+    // 1. Target the player in the immediate message container first
+    const container = button.closest(".chat-message-group");
+    if (container) {
+      mediaElement = container.querySelector("video, audio") as HTMLMediaElement;
+    }
+
+    // 2. If not found in current message, find the nearest player ABOVE this button
+    if (!mediaElement) {
+      const allPlayers = Array.from(document.querySelectorAll("video, audio")) as HTMLMediaElement[];
+      // Filter players that are physically above the button in the DOM
+      const previousPlayers = allPlayers.filter(p => 
+        p.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      if (previousPlayers.length > 0) {
+        mediaElement = previousPlayers[previousPlayers.length - 1]; // Pick the closest one above
+      }
+    }
+  }
+
+  // 3. Fallback to the very first player if no previous ones found
+  if (!mediaElement) {
+    mediaElement = document.querySelector("video, audio") as HTMLMediaElement;
+  }
 
   if (!mediaElement) return;
 
-  // Scroll to the player so the user can see it!
+  // Scroll to the player so the user can see it
   mediaElement.scrollIntoView({ behavior: "smooth", block: "center" });
 
   if (activeTimeUpdateRef) {
@@ -79,53 +108,92 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number) => {
   activeTimeUpdateRef = { element: mediaElement, listener };
 };
 
-const renderTextWithTimestamps = (text: string) => {
-  // Matches standard [00:00 - 00:00] OR extended [filename.mp4 | 00:00 – 00:00]
-  const regex = /\[(?:.*?\|\s*)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*\]/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
+const renderTextWithEnhancements = (text: string) => {
+  // 1. Matches timestamps: [00:00 - 00:00]
+  const timestampRegex = /\[(?:.*?\|\s*)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*\]/g;
+  
+  // 2. Matches filenames: file_name.ext (common extensions)
+  const fileRegex = /\b([\w-]+\.(?:pdf|mp4|mp3|wav|mov|avi|doc|docx|txt))\b/gi;
 
-  while ((match = regex.exec(text)) !== null) {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  // We'll combine matches and sort them by index to process sequentially
+  const matches: { index: number; length: number; content: React.ReactNode }[] = [];
+
+  // Find Timestamps
+  let tMatch;
+  while ((tMatch = timestampRegex.exec(text)) !== null) {
+    const startHours = tMatch[1] ? parseInt(tMatch[1], 10) : 0;
+    const startMins = parseInt(tMatch[2], 10);
+    const startSecs = parseInt(tMatch[3], 10);
+    const startSeconds = startHours * 3600 + startMins * 60 + startSecs;
+
+    const endHours = tMatch[4] ? parseInt(tMatch[4], 10) : 0;
+    const endMins = parseInt(tMatch[5], 10);
+    const endSecs = parseInt(tMatch[6], 10);
+    const endSeconds = endHours * 3600 + endMins * 60 + endSecs;
+
+    const timeLabel = `[${tMatch[1] ? tMatch[1] + ":" : ""}${tMatch[2]}:${tMatch[3]} - ${tMatch[4] ? tMatch[4] + ":" : ""}${tMatch[5]}:${tMatch[6]}]`;
+
+    matches.push({
+      index: tMatch.index,
+      length: tMatch[0].length,
+      content: (
+        <button
+          key={`ts-${tMatch.index}`}
+          type="button"
+          className="mx-1 inline-flex items-center rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
+          onClick={(e) => handlePlayMedia(startSeconds, endSeconds, e)}
+        >
+          <span className="mr-1 text-[9px]">▶</span> {timeLabel}
+        </button>
+      )
+    });
+  }
+
+  // Find Filenames
+  let fMatch;
+  while ((fMatch = fileRegex.exec(text)) !== null) {
+    // Avoid overlapping with timestamps if a filename was inside a timestamp
+    if (matches.some(m => fMatch!.index >= m.index && fMatch!.index < m.index + m.length)) continue;
+
+    matches.push({
+      index: fMatch.index,
+      length: fMatch[0].length,
+      content: (
+        <span
+          key={`file-${fMatch.index}`}
+          className="mx-0.5 rounded-none bg-white/10 border border-white/30 px-1.5 py-0.5 font-mono text-[12px] font-bold text-white shadow-sm"
+        >
+          {fMatch[0]}
+        </span>
+      )
+    });
+  }
+
+  // Sort matches by index
+  matches.sort((a, b) => a.index - b.index);
+
+  // Build the final parts array
+  matches.forEach(match => {
     if (match.index > lastIndex) {
       parts.push(text.substring(lastIndex, match.index));
     }
-
-    const startHours = match[1] ? parseInt(match[1], 10) : 0;
-    const startMins = parseInt(match[2], 10);
-    const startSecs = parseInt(match[3], 10);
-    const startSeconds = startHours * 3600 + startMins * 60 + startSecs;
-
-    const endHours = match[4] ? parseInt(match[4], 10) : 0;
-    const endMins = parseInt(match[5], 10);
-    const endSecs = parseInt(match[6], 10);
-    const endSeconds = endHours * 3600 + endMins * 60 + endSecs;
-
-    const timeLabel = `[${match[1] ? match[1] + ":" : ""}${match[2]}:${match[3]} - ${match[4] ? match[4] + ":" : ""}${match[5]}:${match[6]}]`;
-
-    parts.push(
-      <button
-        key={match.index}
-        type="button"
-        className="mx-1 inline-flex items-center rounded bg-blue-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-blue-400 transition-colors hover:bg-blue-500/30"
-        onClick={() => handlePlayMedia(startSeconds, endSeconds)}
-      >
-        <span className="mr-1 text-[9px]">▶</span> {timeLabel}
-      </button>
-    );
-    lastIndex = regex.lastIndex;
-  }
+    parts.push(match.content);
+    lastIndex = match.index + match.length;
+  });
 
   if (lastIndex < text.length) {
     parts.push(text.substring(lastIndex));
   }
 
-  return parts.length === 1 && typeof parts[0] === "string" ? text : parts;
+  return parts.length === 0 ? text : parts;
 };
 
 const processMarkdownChildren = (children: React.ReactNode): React.ReactNode => {
   if (typeof children === "string") {
-    return renderTextWithTimestamps(children);
+    return renderTextWithEnhancements(children);
   }
   if (Array.isArray(children)) {
     return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child)}</Fragment>);
@@ -150,11 +218,11 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
   };
 
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-neutral-800 text-[13px] bg-[#1e1e1e]">
-      <div className="flex items-center justify-between bg-neutral-900 px-4 py-2 text-xs text-neutral-400">
+    <div className="my-4 overflow-hidden rounded-none border border-white/20 text-[13px] bg-black shadow-[4px_4px_0px_0px_rgba(255,255,255,0.05)]">
+      <div className="flex items-center justify-between border-b border-white/10 bg-neutral-900/50 px-4 py-2 text-xs font-bold uppercase tracking-widest text-neutral-400">
         <span className="font-mono">{language}</span>
         <button onClick={handleCopy} className="flex items-center gap-1.5 hover:text-white transition-colors" type="button">
-          {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <Check className="h-3.5 w-3.5 text-white" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? "Copied!" : "Copy code"}
         </button>
       </div>
@@ -162,7 +230,13 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
         style={vscDarkPlus}
         language={language}
         PreTag="div"
-        customStyle={{ margin: 0, padding: "1rem", backgroundColor: "transparent" }}
+        customStyle={{
+          margin: 0,
+          padding: "1.25rem",
+          backgroundColor: "transparent",
+          fontSize: "13px",
+          lineHeight: "1.6",
+        }}
       >
         {value}
       </SyntaxHighlighter>
@@ -180,14 +254,14 @@ const MessageActionToolbar = ({ text, isHuman }: { text: string; isHuman?: boole
   };
 
   return (
-    <div className={`mt-0.5 flex items-center gap-2 text-neutral-500 transition-opacity duration-200 ${isHuman ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}>
+    <div className={`mt-0.5 flex items-center gap-2 text-neutral-500 transition-opacity duration-200 ${isHuman ? "opacity-100 sm:opacity-0 sm:group-hover:opacity-100" : "opacity-100"}`}>
       <button
         onClick={handleCopy}
         className="flex items-center justify-center rounded p-1 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
         title="Copy message"
         type="button"
       >
-        {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+        {copied ? <Check className="h-4 w-4 text-white" /> : <Copy className="h-4 w-4" />}
       </button>
     </div>
   );
@@ -248,12 +322,8 @@ const ChatSessionItem = ({
   const handleLocalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = tempTitle.trim();
-    if (!trimmed || trimmed === session.title) {
-      setIsRenaming(false);
-      return;
-    }
-    await onRenameSubmit(session.session_id, trimmed);
     setIsRenaming(false);
+    onRenameSubmit(session.session_id, trimmed);
   };
 
   return (
@@ -413,9 +483,24 @@ export default function ChatPage() {
     if (!trimmed) {
       return;
     }
+
+    // Store old title for potential revert
+    const oldSession = sessions.find(s => s.session_id === sessionId);
+    const oldTitle = oldSession?.title || "";
+
+    // Optimistic Update
+    setSessions((prev) =>
+      prev.map((s) => s.session_id === sessionId ? { ...s, title: trimmed } : s)
+    );
+    if (activeSession?.session_id === sessionId) {
+      setActiveSession((prev) => prev ? { ...prev, title: trimmed } : prev);
+    }
+
     try {
       const res = await chatService.renameSession(sessionId, trimmed);
       if (res.success) {
+        showToast.success("Chat renamed");
+        // Update with server returned title just in case it's different
         setSessions((prev) =>
           prev.map((s) => s.session_id === sessionId ? { ...s, title: res.data.title } : s)
         );
@@ -424,11 +509,17 @@ export default function ChatPage() {
         }
       }
     } catch (err) {
+      showToast.error("Failed to rename session");
+      // Revert on failure
+      setSessions((prev) =>
+        prev.map((s) => s.session_id === sessionId ? { ...s, title: oldTitle } : s)
+      );
+      if (activeSession?.session_id === sessionId) {
+        setActiveSession((prev) => prev ? { ...prev, title: oldTitle } : prev);
+      }
       console.error("Failed to rename session", err);
-    } finally {
-      // No-op
     }
-  }, [activeSession]);
+  }, [sessions, activeSession]);
 
   // Delete session handler
   const handleDeleteSession = useCallback(async (sessionId: string) => {
@@ -443,6 +534,7 @@ export default function ChatPage() {
       onConfirm: async () => {
         try {
           await chatService.deleteSession(sessionId);
+          showToast.success("Chat deleted");
           setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
           if (activeSession?.session_id === sessionId) {
             setActiveSession(null);
@@ -452,6 +544,7 @@ export default function ChatPage() {
             lastLoadedSessionIdRef.current = null;
           }
         } catch (err) {
+          showToast.error("Failed to delete chat");
           console.error("Failed to delete session", err);
         } finally {
           setMenuOpenSessionId(null);
@@ -484,8 +577,16 @@ export default function ChatPage() {
 
   // File‑upload state
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [tempId, setTempId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [tempId, setTempId] = useState<string | null>(null);
+
+  // Clear tempId if no files are attached
+  useEffect(() => {
+    if (attachedFiles.length === 0 && tempId) {
+      setTempId(null);
+      tempIdSentRef.current = false;
+    }
+  }, [attachedFiles.length, tempId]);
 
   // Fetch user profile
   useEffect(() => {
@@ -523,6 +624,31 @@ export default function ChatPage() {
   useEffect(() => {
     fetchSessions(1);
   }, []);
+
+  // Auto-scroll logic for streaming and session load
+  useEffect(() => {
+    if (isSending) {
+      // Use "auto" for streaming to keep it snappy and locked to bottom
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+  }, [activeMessages.length, isSending]);
+
+  // Handle auto-scroll on content updates (streaming text)
+  useEffect(() => {
+    if (isSending && activeMessages.length > 0) {
+      const lastMessage = activeMessages[activeMessages.length - 1];
+      if (lastMessage.role === "ai") {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }
+    }
+  }, [activeMessages[activeMessages.length - 1]?.content]);
+
+  useEffect(() => {
+    if (!isLoadingMessages && activeMessages.length > 0) {
+      // Smooth scroll only on initial load or navigation
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isLoadingMessages]);
   useEffect(() => {
     const sentinel = scrollSentinelRef.current;
     if (!sentinel) return;
@@ -563,13 +689,23 @@ export default function ChatPage() {
     }
   }, []);
 
+  const closeSidebarOnMobile = useCallback(() => {
+    if (window.innerWidth < 768) {
+      setOpen(false);
+    }
+  }, [setOpen]);
+
   const handleSessionClick = useCallback(
     (session: ChatSession) => {
-      if (session.session_id === lastLoadedSessionIdRef.current) return;
+      if (session.session_id === lastLoadedSessionIdRef.current) {
+        closeSidebarOnMobile();
+        return;
+      }
       setSearchParams({ session: session.session_id }, { replace: false });
       loadSession(session);
+      closeSidebarOnMobile();
     },
-    [setSearchParams, loadSession]
+    [setSearchParams, loadSession, closeSidebarOnMobile]
   );
 
   useEffect(() => {
@@ -636,10 +772,47 @@ export default function ChatPage() {
       if (!fileList || fileList.length === 0) return;
 
       const newFiles = Array.from(fileList);
+      const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+      const ALLOWED_TYPES = ["application/pdf", "video/", "audio/"];
+
+      const validFiles: File[] = [];
+      for (const file of newFiles) {
+        const isTypeAllowed = ALLOWED_TYPES.some((type) =>
+          file.type.startsWith(type)
+        );
+
+        if (!isTypeAllowed) {
+          showToast.error(`File type not allowed: ${file.name}. Please upload PDF, Video, or Audio.`);
+          continue;
+        }
+
+        if (file.size > MAX_SIZE) {
+          showToast.error(`File too large: ${file.name}. Max size is 50MB.`);
+          continue;
+        }
+
+        // Check for duplicates (same name and size)
+        const isDuplicate = attachedFiles.some(
+          (af) => af.file.name === file.name && af.file.size === file.size
+        );
+
+        if (isDuplicate) {
+          showToast.warning(`File "${file.name}" is already uploaded.`);
+          continue;
+        }
+
+        validFiles.push(file);
+      }
+
+      if (validFiles.length === 0) {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
       const existingFiles = attachedFiles.filter(
         (af) => af.status === "uploaded"
       );
-      const pendingNew: AttachedFile[] = newFiles.map((f) => ({
+      const pendingNew: AttachedFile[] = validFiles.map((f) => ({
         file: f,
         status: "uploading" as const,
       }));
@@ -648,7 +821,7 @@ export default function ChatPage() {
 
       const allFiles = [
         ...existingFiles.map((af) => af.file),
-        ...newFiles,
+        ...validFiles,
       ];
 
       const controller = new AbortController();
@@ -678,6 +851,7 @@ export default function ChatPage() {
 
         const message =
           err instanceof Error ? err.message : "Upload failed";
+        showToast.error(message);
         setAttachedFiles([
           ...existingFiles,
           ...newFiles.map((f) => ({
@@ -704,15 +878,27 @@ export default function ChatPage() {
   }, []);
 
   // Remove a single file
-  const handleRemoveSingleFile = useCallback((index: number) => {
-    setAttachedFiles((prev) => {
-      const fileToRemove = prev[index];
-      if (fileToRemove?.status === "uploading" && uploadAbortControllerRef.current) {
-        uploadAbortControllerRef.current.abort();
+  const handleRemoveSingleFile = useCallback(async (index: number) => {
+    const fileToRemove = attachedFiles[index];
+    if (!fileToRemove) return;
+
+    // 1. Abort if still uploading
+    if (fileToRemove.status === "uploading" && uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+    }
+
+    // 2. Remove from UI state
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+
+    // 3. If already uploaded, notify backend
+    if (fileToRemove.status === "uploaded" && tempId && fileToRemove.serverInfo?.file_id) {
+      try {
+        await cancelFile(tempId, fileToRemove.serverInfo.file_id);
+      } catch (err) {
+        console.error("Failed to cancel file on server", err);
       }
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+    }
+  }, [attachedFiles, tempId]);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -930,13 +1116,15 @@ export default function ChatPage() {
     }
   }, []);
 
-  //icon for file type
-  const fileIcon = (file: File) => {
-    if (file.type.startsWith("audio/"))
-      return <span className="text-purple-400 text-xs">♪</span>;
-    if (file.type.startsWith("video/"))
-      return <span className="text-blue-400 text-xs">▶</span>;
-    return <IconFile className="h-4 w-4 text-neutral-400" />;
+  const getFileInfo = (file: File) => {
+    const type = file.type;
+    const name = file.name.toLowerCase();
+    if (type.startsWith("audio/")) return { icon: <IconMusic className="h-4 w-4" />, color: "bg-neutral-800", label: "Audio" };
+    if (type.startsWith("video/")) return { icon: <IconVideo className="h-4 w-4" />, color: "bg-neutral-800", label: "Video" };
+    if (type === "application/pdf") return { icon: <IconFileText className="h-4 w-4" />, color: "bg-neutral-800", label: "PDF" };
+    if (type.includes("spreadsheet") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) 
+      return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "Spreadsheet" };
+    return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "File" };
   };
 
   return (
@@ -995,6 +1183,7 @@ export default function ChatPage() {
                   href: "/chat",
                   icon: <IconPlus className="h-6 w-6 shrink-0 text-neutral-200" />,
                 }}
+                onClick={closeSidebarOnMobile}
               />
 
 
@@ -1126,14 +1315,14 @@ export default function ChatPage() {
                 >
 
 
-                  <h2 className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-3xl md:text-5xl font-bold tracking-tight text-transparent mb-4">
+                  <h2 className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-2xl md:text-5xl font-bold tracking-tight text-transparent mb-2 md:mb-4">
                     What can I help with?
                   </h2>
-                  <p className="max-w-md text-base text-neutral-400 mb-12">
+                  <p className="max-w-md text-sm md:text-base text-neutral-400 mb-6 md:mb-12">
                     Analyze documents, extract insights from media, and chat with your project's knowledge base.
                   </p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-4xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-4xl px-2">
                     {[
                       {
                         title: "Document RAG",
@@ -1159,12 +1348,14 @@ export default function ChatPage() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 * i + 0.3 }}
-                        className={`flex flex-col items-start p-5 rounded-2xl border border-neutral-800 bg-neutral-900/50 backdrop-blur-sm transition-all duration-300 ${feature.bg} text-left group cursor-default`}
+                        className={`flex flex-col items-start p-4 md:p-5 rounded-2xl border border-neutral-800 bg-neutral-900/50 backdrop-blur-sm transition-all duration-300 ${feature.bg} text-left group cursor-default`}
                       >
-                        <div className="mb-3 p-2 rounded-lg bg-neutral-800 group-hover:bg-neutral-700 transition-colors duration-300">
-                          {feature.icon}
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="p-2 rounded-lg bg-neutral-800 group-hover:bg-neutral-700 transition-colors duration-300">
+                            {feature.icon}
+                          </div>
+                          <h3 className="font-semibold text-white">{feature.title}</h3>
                         </div>
-                        <h3 className="font-semibold text-white mb-1">{feature.title}</h3>
                         <p className="text-sm text-neutral-500 leading-snug">{feature.desc}</p>
                       </motion.div>
                     ))}
@@ -1183,24 +1374,43 @@ export default function ChatPage() {
               <AnimatePresence initial={false}>
                 {activeMessages.map((message, index) => (
                   <motion.div
-                    key={`${message.role}-${index}-${message.created_at}`}
+                    key={`${message.role}-${message.message_index || index}`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className={message.role === "human" ? "group flex justify-end" : "group flex justify-start"}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className={cn(
+                      "chat-message-group",
+                      message.role === "human" ? "group flex justify-end" : "group flex justify-start"
+                    )}
                   >
                     <div className={`flex flex-col gap-2 ${message.role === "human" ? "max-w-[80%] items-end" : "w-full"}`}>
                       {/* File references */}
-                      {message.role === "human" && message.file_references.length > 0 && (
-                        <div className="flex flex-col items-end gap-2">
-                          {message.file_references.map((ref, idx) => {
-                            const isVideo = ref.content_type?.startsWith("video/") || ref.file_type?.startsWith("video");
-                            const isAudio = ref.content_type?.startsWith("audio/") || ref.file_type?.startsWith("audio");
-                            const mediaUrl = ref.file_url?.startsWith("http") || ref.file_url?.startsWith("blob:")
+                       {message.role === "human" && message.file_references.length > 0 && (
+                        <div className={`flex flex-col gap-2 ${message.role === "human" ? "items-end" : "items-start"}`}>
+                          {Array.from(new Map(message.file_references.map(ref => [ref.file_name, ref])).values()).map((ref, idx) => {
+                            const fileName = ref.file_name.toLowerCase().trim();
+                            const isVideo = ref.content_type?.toLowerCase().includes("video") || ref.file_type?.toLowerCase().includes("video") || fileName.endsWith(".mp4") || fileName.endsWith(".mov") || fileName.endsWith(".webm");
+                            const isAudio = ref.content_type?.toLowerCase().includes("audio") || ref.file_type?.toLowerCase().includes("audio") || fileName.endsWith(".mp3") || fileName.endsWith(".wav") || fileName.endsWith(".m4a") || fileName.includes("audio");
+                            let mediaUrl = ref.file_url?.startsWith("http") || ref.file_url?.startsWith("blob:")
                               ? ref.file_url
                               : ref.file_url
                                 ? `${import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || "http://localhost:8000"}${ref.file_url.startsWith("/") ? "" : "/"}${ref.file_url}`
                                 : "";
+
+                            // Rescue URL from previous references if missing in current chunk
+                            if (!mediaUrl) {
+                              const rescued = activeMessages
+                                .flatMap(m => m.file_references)
+                                .find(r => r.file_name === ref.file_name && r.file_url)?.file_url;
+                              
+                              if (rescued) {
+                                mediaUrl = rescued.startsWith("http") || rescued.startsWith("blob:")
+                                  ? rescued
+                                  : `${import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || "http://localhost:8000"}${rescued.startsWith("/") ? "" : "/"}${rescued}`;
+                              }
+                            }
+
+                            if ((isVideo || isAudio) && !mediaUrl) return null;
 
                             if (isVideo && mediaUrl) {
                               return (
@@ -1261,25 +1471,25 @@ export default function ChatPage() {
                             {/* Message content — ReactMarkdown */}
                             <ReactMarkdown
                               components={{
-                                p: ({ children }) => <p className="mb-1 text-sm leading-relaxed">{processMarkdownChildren(children)}</p>,
-                                ul: ({ children }) => <ul className="mb-1 list-disc space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ul>,
-                                ol: ({ children }) => <ol className="mb-1 list-decimal space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ol>,
+                                p: ({ children }) => <p className="mb-3 last:mb-0 text-sm leading-relaxed text-neutral-300">{processMarkdownChildren(children)}</p>,
+                                ul: ({ children }) => <ul className="mb-3 last:mb-0 list-disc space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children)}</ul>,
+                                ol: ({ children }) => <ol className="mb-3 last:mb-0 list-decimal space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children)}</ol>,
                                 li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children)}</li>,
-                                strong: ({ children }) => <strong className="font-semibold text-white">{processMarkdownChildren(children)}</strong>,
-                                em: ({ children }) => <em className="italic text-neutral-300">{processMarkdownChildren(children)}</em>,
+                                strong: ({ children }) => <strong className="font-bold text-white">{processMarkdownChildren(children)}</strong>,
+                                em: ({ children }) => <em className="italic text-neutral-400">{processMarkdownChildren(children)}</em>,
                                 code: ({ className, children, ...props }) => {
                                   const match = /language-(\w+)/.exec(className || "");
                                   return match ? (
                                     <CodeBlock language={match[1]} value={String(children).replace(/\n$/, "")} />
                                   ) : (
-                                    <code className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[13px] text-emerald-400" {...props}>
+                                    <code className="rounded-none border border-white/20 bg-neutral-900 px-1.5 py-0.5 font-mono text-[13px] font-bold text-white" {...props}>
                                       {children}
                                     </code>
                                   );
                                 },
-                                h1: ({ children }) => <h1 className="mb-1 text-lg font-bold text-white">{children}</h1>,
-                                h2: ({ children }) => <h2 className="mb-1 text-base font-semibold text-white">{children}</h2>,
-                                h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold text-neutral-200">{children}</h3>,
+                                h1: ({ children }) => <h1 className="mb-4 mt-6 text-xl font-black uppercase tracking-tighter text-white">{children}</h1>,
+                                h2: ({ children }) => <h2 className="mb-3 mt-5 text-lg font-black uppercase tracking-tight text-white">{children}</h2>,
+                                h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-neutral-200">{children}</h3>,
                               }}
                             >
                               {message.content}
@@ -1330,56 +1540,6 @@ export default function ChatPage() {
 
         <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 p-4">
           <div className="mx-auto max-w-3xl">
-            {attachedFiles.length > 0 && (
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {attachedFiles.map((af, idx) => (
-                  <div
-                    key={`${af.file.name}-${idx}`}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${af.status === "error"
-                      ? "border-red-700 bg-red-950/40 text-red-300"
-                      : af.status === "uploading"
-                        ? "border-neutral-700 bg-neutral-900 text-neutral-400"
-                        : "border-neutral-800 bg-black text-neutral-300"
-                      }`}
-                  >
-                    {af.status === "uploading" ? (
-                      <IconLoader2 className="h-4 w-4 animate-spin text-neutral-500" />
-                    ) : (
-                      fileIcon(af.file)
-                    )}
-                    <span className="max-w-[140px] truncate">
-                      {af.file.name}
-                    </span>
-                    {af.status === "uploaded" && (
-                      <span className="text-emerald-400">✓</span>
-                    )}
-                    {af.status === "error" && (
-                      <span title={af.error}>✗</span>
-                    )}
-                    <button
-                      className="ml-1 shrink-0 text-neutral-500 transition hover:text-white"
-                      onClick={() => handleRemoveSingleFile(idx)}
-                      type="button"
-                      aria-label={`Remove ${af.file.name}`}
-                    >
-                      <IconX className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-
-                {/* Clear all button */}
-                {attachedFiles.length > 1 && (
-                  <button
-                    className="rounded-md px-2 py-1 text-xs text-neutral-500 transition hover:bg-neutral-800 hover:text-white"
-                    onClick={handleRemoveFiles}
-                    type="button"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-            )}
-
             <PlaceholdersAndVanishInput
               className="max-w-none border border-neutral-800 bg-black shadow-none dark:bg-black"
               disabled={isUploading}
@@ -1407,6 +1567,57 @@ export default function ChatPage() {
               onStop={handleStopChat}
               isStreaming={isSending}
               placeholders={placeholders}
+              topContent={
+                attachedFiles.length > 0 && (
+                  <div className="mb-2 flex w-full items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
+                    {attachedFiles.map((af, idx) => {
+                      const { icon, color, label } = getFileInfo(af.file);
+                      return (
+                        <div
+                          key={`${af.file.name}-${idx}`}
+                          className={`group relative flex w-64 shrink-0 items-center gap-3 rounded-xl border p-2 transition-all duration-200 ${af.status === "error"
+                            ? "border-red-900/50 bg-red-950/20"
+                            : "border-white/10 bg-[#0a0a0a] hover:border-white/20"
+                            }`}
+                        >
+                          {/* Icon Box */}
+                          <div className={cn(
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/5 text-white shadow-sm",
+                            af.status === "uploading" ? "bg-neutral-900" : "bg-white/5"
+                          )}>
+                            {af.status === "uploading" ? (
+                              <IconLoader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                              icon
+                            )}
+                          </div>
+
+                          {/* File Details */}
+                          <div className="flex flex-1 flex-col min-w-0">
+                            <span className="truncate text-sm font-bold text-white tracking-tight">
+                              {af.file.name}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                              {af.status === "error" ? "Upload Failed" : af.status === "uploading" ? "Uploading..." : label}
+                            </span>
+                          </div>
+
+                          {/* Remove Button */}
+                          <button
+                            className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-white border border-white/10 transition-all hover:bg-neutral-800"
+                            onClick={() => handleRemoveSingleFile(idx)}
+                            type="button"
+                            aria-label={`Remove ${af.file.name}`}
+                          >
+                            <IconX className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                  </div>
+                )
+              }
             />
           </div>
         </div>

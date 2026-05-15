@@ -7,19 +7,6 @@ VIDEO_EXTENSIONS = {"mp4", "mkv", "mov", "avi", "webm", "flv"}
 
 
 def convert_video_to_audio(video_path: str, output_dir: str = "app/temp") -> str:
-    """
-    Convert video to low quality audio using ffmpeg.
-    - Output filename is unique (UUID)
-    - Original video is deleted after conversion
-    
-    Args:
-        video_path: path to input video file
-        output_dir: directory to save the audio file
-    
-    Returns:
-        output_path: path to the converted audio file
-    """
-
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 

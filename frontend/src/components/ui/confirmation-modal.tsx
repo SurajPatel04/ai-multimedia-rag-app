@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { IconX, IconAlertTriangle } from "@tabler/icons-react";
+import { IconX, IconAlertTriangle, IconLogout, IconTrash } from "@tabler/icons-react";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -23,76 +23,83 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   cancelText = "Cancel",
   isDanger = false,
 }) => {
+  // Determine which icon to show based on title or isDanger
+  const getIcon = () => {
+    const t = title.toLowerCase();
+    if (t.includes("logout")) return <IconLogout className="h-6 w-6" />;
+    if (t.includes("delete")) return <IconTrash className="h-6 w-6" />;
+    return <IconAlertTriangle className="h-6 w-6" />;
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black/70 md:backdrop-blur-[2px]"
           />
 
           {/* Modal content */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: 8 }}
+            initial={{ opacity: 0, scale: 0.98, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 8 }}
-            transition={{
-              type: "spring",
-              damping: 30,
-              stiffness: 400,
+            exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            transition={{ 
+              duration: 0.15, 
+              ease: "easeOut" 
             }}
-            className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl"
+            className="relative w-full max-w-[340px] border-2 border-white bg-black p-5 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]"
           >
-            <div className="flex items-start justify-between">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isDanger ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"}`}>
-                <IconAlertTriangle className="h-5 w-5" />
+            {/* Header: Icon + Title */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-white bg-white/5 text-white">
+                  {getIcon()}
+                </div>
+                <h3 className="text-lg font-black uppercase tracking-tighter text-white leading-none">{title}</h3>
               </div>
               <button
                 onClick={onClose}
-                className="rounded-lg p-1 text-neutral-500 transition hover:bg-neutral-800 hover:text-neutral-300"
+                className="p-1 text-neutral-500 transition hover:text-white"
               >
                 <IconX className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-4">
-              <h3 className="text-lg font-semibold text-white tracking-tight">{title}</h3>
-              <p className="mt-2 text-sm text-neutral-400 leading-relaxed">
-                {message}
-              </p>
-            </div>
+            {/* Message */}
+            <p className="mb-8 text-sm font-medium text-neutral-400 leading-snug">
+              {message}
+            </p>
 
-            <div className="mt-8 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                type="button"
-                onClick={onClose}
-                className="flex-1 rounded-xl border border-neutral-800 px-4 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-800 hover:text-white sm:flex-none sm:min-w-[80px]"
-              >
-                {cancelText}
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+            {/* Actions */}
+            <div className="flex flex-col gap-2">
+              <button
                 type="button"
                 onClick={() => {
                   onConfirm();
                   onClose();
                 }}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition shadow-lg sm:flex-none sm:min-w-[80px] ${
+                className={`w-full border-2 px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition-all active:translate-y-0.5 active:translate-x-0.5 active:shadow-none ${
                   isDanger
-                    ? "bg-red-600 hover:bg-red-500 shadow-red-900/20"
-                    : "bg-blue-600 hover:bg-blue-500 shadow-blue-900/20"
+                    ? "border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(220,38,38,0.3)] hover:bg-red-500"
+                    : "border-white bg-white text-black shadow-[4px_4px_0px_0px_rgba(255,255,255,0.3)] hover:bg-neutral-200"
                 }`}
               >
                 {confirmText}
-              </motion.button>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full border-2 border-neutral-800 bg-transparent px-4 py-3 text-xs font-black uppercase tracking-[0.2em] text-neutral-500 transition-all hover:border-white hover:text-white active:bg-neutral-900"
+              >
+                {cancelText}
+              </button>
             </div>
           </motion.div>
         </div>

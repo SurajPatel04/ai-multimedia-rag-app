@@ -16,17 +16,10 @@ def count_tokens(text: str) -> int:
 
 
 def count_history_tokens(chat_history: list[BaseMessage]) -> int:
-    """Sum tokens across all messages in history."""
     return sum(count_tokens(msg.content) for msg in chat_history)
 
 
 def should_summarize(chat_history: list[BaseMessage]) -> tuple[bool, str]:
-    """
-    Returns (True, reason) if summarization should run, else (False, "").
-    Two triggers:
-      1. Message count  >= TRIGGER_MESSAGE_COUNT
-      2. Total tokens   >= TRIGGER_TOKEN_COUNT
-    """
     msg_count    = len(chat_history)
     total_tokens = count_history_tokens(chat_history)
 

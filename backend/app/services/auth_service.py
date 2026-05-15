@@ -37,7 +37,6 @@ async def create_both_tokens(user_id: PydanticObjectId):
 
     access_token = await create_access_token({"sub": str(user_id)})
 
-    # JWT ID It is a unique identifier for a token.
     jti = str(uuid4())
 
     refresh_token = await create_refresh_token({"sub": str(user_id), "jti": jti})

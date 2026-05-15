@@ -8,6 +8,7 @@ import { registerUser } from "@/features/auth/authThunks";
 import { clearError } from "@/features/auth/authSlice";
 import { useEffect } from "react";
 import ragIcon from "@/assets/rag.png";
+import { showToast } from "@/lib/toast";
 
 export default function SignupPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -30,7 +31,10 @@ export default function SignupPage() {
 
     const resultAction = await dispatch(registerUser(payload));
     if (registerUser.fulfilled.match(resultAction)) {
+      showToast.success("Account created successfully! Please sign in.");
       navigate("/login");
+    } else if (registerUser.rejected.match(resultAction)) {
+      showToast.error(resultAction.payload as string || "Registration failed");
     }
   };
 

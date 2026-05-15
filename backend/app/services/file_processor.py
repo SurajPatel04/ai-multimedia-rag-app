@@ -19,8 +19,8 @@ def generate_temp_id() -> str:
 
 def process_file(temp_id: str, file_path: str) -> dict:
     """
-    Upload time — only transcribe/chunk
-    NO vector DB yet — just return raw data for MongoDB
+    Upload time only transcribe/chunk
+    NO vector DB yet just return raw data for MongoDB Store
     """
 
     if not os.path.exists(file_path):
@@ -39,11 +39,10 @@ def process_file(temp_id: str, file_path: str) -> dict:
 
 
 def _process_pdf_file(temp_id: str, file_path: str) -> dict:
-    print(f"Processing PDF: {file_path}")
+    # print(f"Processing PDF: {file_path}")
 
     langchain_chunks = process_pdf(file_path)
 
-    # convert to raw dicts for MongoDB storage
     chunks = [
         {
             "chunk_index": i,
@@ -76,7 +75,6 @@ def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
 
     result = transcribe_audio(file_path)
 
-    # ✅ Build full_text WITH timestamps embedded
     # Format: [0:05 - 1:52] text\n\n[1:52 - 3:20] text...
     def seconds_to_mmss(s: float) -> str:
         m = int(s) // 60
@@ -108,7 +106,7 @@ def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
     return {
         "temp_id":    temp_id,
         "file_type":  "audio",
-        "full_text":  full_text_with_timestamps,  # ✅ now has timestamps
+        "full_text":  full_text_with_timestamps,
         "utterances": result["utterances"],
         "chunks":     chunks,
         "embedded":   False,
@@ -118,7 +116,7 @@ def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
 
 def embed_and_store(user_id: str, session_id: str, temp_id: str, chunks: list, file_type: str, file_name: str = ""):
     """
-    First message time — embed chunks and store in FAISS
+    First message time embed chunks and store in FAISS
     """
 
     documents = []

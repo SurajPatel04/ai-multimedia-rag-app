@@ -8,6 +8,7 @@ import { loginUser } from "@/features/auth/authThunks";
 import { clearError } from "@/features/auth/authSlice";
 import { useEffect } from "react";
 import ragIcon from "@/assets/rag.png";
+import { showToast } from "@/lib/toast";
 
 export default function LoginPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -23,7 +24,10 @@ export default function LoginPage() {
   const handleSubmit = async (values: AuthFormValues) => {
     const resultAction = await dispatch(loginUser(values));
     if (loginUser.fulfilled.match(resultAction)) {
+      showToast.success("Successfully logged in!");
       navigate("/chat");
+    } else if (loginUser.rejected.match(resultAction)) {
+      showToast.error(resultAction.payload as string || "Login failed");
     }
   };
 

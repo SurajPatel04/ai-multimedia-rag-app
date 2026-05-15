@@ -14,8 +14,7 @@ config = DeepgramClientOptions(
 deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"), config)
 
 
-def merge_utterances(utterances, max_words: int = 80):
-    """Merge small utterances into larger RAG-friendly chunks"""
+def merge_utterances(utterances, max_words: int = 12):
     chunks = []
     current_text = ""
     current_start = None
@@ -53,7 +52,6 @@ def merge_utterances(utterances, max_words: int = 80):
 
 
 def find_exact_timestamp(utterances: list, topic: str) -> float | None:
-    """Find exact timestamp of first utterance mentioning the topic"""
     topic_lower = topic.lower()
     for utt in utterances:
         if topic_lower in utt["text"].lower():
@@ -62,12 +60,6 @@ def find_exact_timestamp(utterances: list, topic: str) -> float | None:
 
 
 def transcribe_audio(file_path: str):
-    """
-    Transcribe audio or video file.
-    - If video → auto convert to audio first, delete video
-    - If audio → transcribe directly
-    """
-
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -116,22 +108,10 @@ def transcribe_audio(file_path: str):
         for utt in response.results.utterances
     ]
 
-    rag_chunks = merge_utterances(response.results.utterances, max_words=200)
+    rag_chunks = merge_utterances(response.results.utterances, max_words=12)
 
     return {
         "full_text": full_text,
         "rag_chunks": rag_chunks,
         "utterances": raw_utterances
     }
-
-
-# usage
-if __name__ == "__main__":
-    result = transcribe_audio("app/temp/0b6180e2-42c289c4_4min.mp4")  # audio ✅
-    # result = transcribe_audio("app/temp/video.mp4")       # video ✅
-
-    print(f"Total RAG chunks: {len(result['rag_chunks'])}")
-    print(f"Total utterances: {len(result['utterances'])}")
-
-    timestamp = find_exact_timestamp(result["utterances"], "google")
-    print(f"Google mentioned at: {timestamp}s")

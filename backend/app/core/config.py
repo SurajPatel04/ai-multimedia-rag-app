@@ -12,7 +12,12 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_ALGORITHM: str
     ACCESS_TOKEN_ALGORITHM: str
     ENV: str
-    # OPENAI_API_KEY: str
+    GOOGLE_API_KEY: str
+    REFRESH_TOKEN_ALGORITHM: str
+    ACCESS_TOKEN_ALGORITHM: str
+    DEEPGRAM_API_KEY: str
+    SUPABASE_KEY: str
+    SUPABASE_URL: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

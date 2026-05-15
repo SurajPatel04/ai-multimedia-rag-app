@@ -7,13 +7,10 @@ FAISS_BASE_PATH = "faiss_indexes"
 
 
 def get_user_index_path(user_id: str) -> str:
-    """Per-user FAISS index directory"""
     return f"{FAISS_BASE_PATH}/{user_id}"
 
 
 def store_vectors(user_id: str, session_id: str, chunks: list, embeddings, file_name: str):
-    """Add chunks to per-user FAISS index with session_id + file_name in metadata"""
-
     index_path = get_user_index_path(user_id)
     os.makedirs(index_path, exist_ok=True)
 
@@ -48,8 +45,6 @@ def store_vectors(user_id: str, session_id: str, chunks: list, embeddings, file_
 
 
 def load_vector_store(user_id: str, embeddings):
-    """Load per-user FAISS index"""
-
     index_path = get_user_index_path(user_id)
 
     if not os.path.exists(f"{index_path}/index.faiss"):
@@ -93,8 +88,6 @@ def vector_search(user_id: str, session_id: str, query: str, embeddings, top_k: 
 
 
 def delete_session_vectors(user_id: str, session_id: str, embeddings):
-    """Remove one session's chunks, keep rest of user's data"""
-
     index_path = get_user_index_path(user_id)
 
     try:
@@ -122,7 +115,6 @@ def delete_session_vectors(user_id: str, session_id: str, embeddings):
 
 
 def delete_user_vectors(user_id: str):
-    """User deletes account — wipe everything"""
     index_path = get_user_index_path(user_id)
     if os.path.exists(index_path):
         shutil.rmtree(index_path)

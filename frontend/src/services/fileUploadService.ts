@@ -4,6 +4,7 @@ export interface UploadedFileInfo {
   original_name: string;
   saved_name: string;
   content_type: string;
+  file_id: string;
 }
 
 export interface UploadResponse {
@@ -35,5 +36,10 @@ export const uploadFiles = async (
     signal,
   });
 
+  return res.data;
+};
+
+export const cancelFile = async (tempId: string, fileId: string) => {
+  const res = await api.delete(`/upload/cancel/${tempId}/${fileId}`);
   return res.data;
 };

@@ -1,7 +1,18 @@
 from beanie import Document, PydanticObjectId, Indexed
-from pydantic import Field
-from typing import Optional, Literal
+from pydantic import BaseModel, Field
+from typing import Optional, Literal, List
 from datetime import datetime, timezone
+
+
+class FileReference(BaseModel):
+    document_id: PydanticObjectId
+    file_name: str
+    file_url: str
+    file_type: str
+    content_type: str
+    chunk_index: Optional[int] = None
+    timestamp_start: Optional[float] = None
+    timestamp_end: Optional[float] = None
 
 
 class ChatMessage(Document):
@@ -10,6 +21,8 @@ class ChatMessage(Document):
 
     role: Literal["human", "ai"]
     content: str
+
+    file_references: List[FileReference] = []
 
     prompt_tokens:     Optional[int]   = None
     completion_tokens: Optional[int]   = None
@@ -21,10 +34,9 @@ class ChatMessage(Document):
     created_at: Indexed(datetime) = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
-    
+
     class Settings:
         name = "chat_messages"
-
         indexes = [
             [("session_id", 1), ("created_at", 1)],
             [("session_id", 1), ("message_index", 1)]

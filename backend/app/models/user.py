@@ -8,13 +8,14 @@ class User(Document):
     last_name: Optional[str] = None
     email: Annotated[EmailStr, Indexed(unique=True)]
     password: str = Field(min_length=8)
-    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 
     @before_event([Replace, Update])
     def update_timestamp(self):
-        self.updatedAt = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
 
 
     class Settings:

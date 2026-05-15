@@ -6,9 +6,9 @@ from app.utils.llm import llm
 
 async def router_query_node(state: State):
 
-    print("----- QUERY ROUTER NODE -----")
-    print("Query:", state.query)
-    print("Session ID:", state.session_id)
+    # print("----- QUERY ROUTER NODE -----")
+    # print("Query:", state.query)
+    # print("Session ID:", state.session_id)
 
     structuredLlm = llm.with_structured_output(QueryRouterState)
 
@@ -17,14 +17,29 @@ async def router_query_node(state: State):
     uploaded_files = state.uploaded_files
     latest_files = state.latest_files
 
-    print("------ uploaded_files : ------",uploaded_files)
-    print("------ latest_files : ------",latest_files)
+    # print("------ uploaded_files : ------",uploaded_files)
+    # print("------ latest_files : ------",latest_files)
+
+    # print("----summary: -------", state.summary)
 
     systemPrompt = f"""
     You are a query router for a file-analysis RAG system. 
     The previous messages summary is: {summary}.
     All files in session : {uploaded_files}
     Latest uploaded files: {latest_files}
+
+
+    NOTE: 
+    - If the user said "what in side" or related sentence use the latest_files or in the uploaded_files last index 
+    Example: latest_files is present 
+        uploaded_files is [ab.pdf, dc.pdf] 
+        latest_files is [dc.pdf]
+            user query is "what inside the file?" or releated words then the target file should be dc.pdf because it is the latest file and also it is present in the uploaded_files
+    
+    Example: latest_files is empty
+        uploaded_files is [ab.pdf, dc.pdf] 
+        latest_files is []
+            user query is "what inside the file?" or releated words then the target file should be dc.pdf because it is the last index of the uploaded_files and also it is present in the uploaded_files
 
     IMPORTANT RULE: 
         - If files are present in the session, ALWAYS assume the user 

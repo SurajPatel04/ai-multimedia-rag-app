@@ -13,6 +13,7 @@ export interface PlaceholdersAndVanishInputProps {
   className?: string;
   disabled?: boolean;
   isStreaming?: boolean;
+  topContent?: React.ReactNode;
 }
 
 export function PlaceholdersAndVanishInput({
@@ -24,6 +25,7 @@ export function PlaceholdersAndVanishInput({
   className,
   disabled,
   isStreaming,
+  topContent,
 }: PlaceholdersAndVanishInputProps) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
 
@@ -74,17 +76,51 @@ export function PlaceholdersAndVanishInput({
     const computedStyles = getComputedStyle(inputRef.current);
 
     const fontSize = parseFloat(computedStyles.getPropertyValue("font-size"));
+    const paddingLeft = parseFloat(computedStyles.paddingLeft);
+    const paddingTop = parseFloat(computedStyles.paddingTop);
+    const lineHeight = parseFloat(computedStyles.lineHeight) || fontSize * 1.2;
+    const maxWidth = (inputRef.current.clientWidth - paddingLeft - parseFloat(computedStyles.paddingRight)) * 2;
+
     ctx.font = `${fontSize * 2}px ${computedStyles.fontFamily}`;
     ctx.fillStyle = "#FFF";
-    ctx.fillText(value, 16, 40);
+    ctx.textBaseline = "top";
+
+    const words = value.split(" ");
+    let line = "";
+    let y = paddingTop * 2;
+    const x = paddingLeft * 2;
+
+    // Handle both explicit newlines and automatic wrapping
+    const sections = value.split("\n");
+    sections.forEach((section) => {
+      const words = section.split(" ");
+      line = "";
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + " ";
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+          ctx.fillText(line, x, y);
+          line = words[n] + " ";
+          y += lineHeight * 2;
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line, x, y);
+      y += lineHeight * 2;
+    });
 
     const imageData = ctx.getImageData(0, 0, 800, 800);
     const pixelData = imageData.data;
     const newData: any[] = [];
 
-    for (let t = 0; t < 800; t++) {
+    // Optimize: Scan only up to the actual text height and use a larger step to reduce particles
+    const scanHeight = Math.min(y + lineHeight * 4, 800); 
+    const step = 4; // Scan every 4th pixel to keep performance high with many lines
+
+    for (let t = 0; t < scanHeight; t += step) {
       let i = 4 * t * 800;
-      for (let n = 0; n < 800; n++) {
+      for (let n = 0; n < 800; n += step) {
         let e = i + 4 * n;
         if (
           pixelData[e] !== 0 &&
@@ -108,12 +144,10 @@ export function PlaceholdersAndVanishInput({
     newDataRef.current = newData.map(({ x, y, color }) => ({
       x,
       y,
-      r: 1,
+      r: 2, // Slightly larger particles to compensate for skipping pixels
       color: `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`,
     }));
   }, [value]);
-
-  // removed useEffect that called draw() on every keystroke to fix lag
 
   const animate = (start: number) => {
     const animateFrame = (pos: number = 0) => {
@@ -165,7 +199,7 @@ export function PlaceholdersAndVanishInput({
     if (!textarea) return;
 
     const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight);
-    const maxHeight = lineHeight * 4;
+    const maxHeight = lineHeight * 6;
 
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
@@ -182,7 +216,6 @@ export function PlaceholdersAndVanishInput({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !animating && !disabled && !isStreaming) {
       e.preventDefault();
-      // Submit the form programmatically so onSubmit always fires
       formRef.current?.requestSubmit();
     }
   };
@@ -210,12 +243,18 @@ export function PlaceholdersAndVanishInput({
     <form
       ref={formRef}
       className={cn(
-        "relative mx-auto flex min-h-12 w-full max-w-xl items-end overflow-hidden rounded-2xl bg-white shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),_0px_1px_0px_0px_rgba(25,28,33,0.02),_0px_0px_0px_1px_rgba(25,28,33,0.08)] transition duration-200 dark:bg-zinc-800",
+        "relative mx-auto flex w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),_0px_1px_0px_0px_rgba(25,28,33,0.02),_0px_0px_0px_1px_rgba(25,28,33,0.08)] transition duration-200 dark:bg-zinc-800",
         value && "bg-gray-50",
         className,
       )}
       onSubmit={handleSubmit}
     >
+      {topContent && (
+        <div className="w-full px-4 pt-3">
+          {topContent}
+        </div>
+      )}
+      <div className="relative flex min-h-12 w-full items-end">
       {leftSlot ? (
         <div
           className={cn(
@@ -245,10 +284,42 @@ export function PlaceholdersAndVanishInput({
         value={value}
         rows={1}
         className={cn(
-          "relative z-50 my-1 max-h-[6rem] min-h-10 flex-1 resize-none border-none bg-transparent px-3 py-2 pr-16 text-sm leading-6 text-black focus:outline-none focus:ring-0 dark:text-white sm:text-base",
+          "relative z-50 my-1 max-h-[10rem] min-h-10 flex-1 resize-none border-none bg-transparent px-3 py-2 pr-16 text-sm leading-6 text-black focus:outline-none focus:ring-0 dark:text-white sm:text-base",
           animating && "text-transparent dark:text-transparent"
         )}
       />
+
+      <div className="pointer-events-none absolute inset-0 flex h-12 items-center">
+        <AnimatePresence mode="wait">
+          {!value && (
+            <motion.p
+              initial={{
+                y: 5,
+                opacity: 0,
+              }}
+              key={`current-placeholder-${currentPlaceholder}`}
+              animate={{
+                y: 0,
+                opacity: 1,
+              }}
+              exit={{
+                y: -15,
+                opacity: 0,
+              }}
+              transition={{
+                duration: 0.3,
+                ease: "linear",
+              }}
+              className={cn(
+                "w-[calc(100%-5rem)] truncate text-left text-sm font-normal text-neutral-500 dark:text-zinc-500 sm:text-base",
+                leftSlot ? "pl-14" : "pl-4 sm:pl-12",
+              )}
+            >
+              {placeholders[currentPlaceholder]}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
 
       <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-40 w-14 bg-inherit" />
       <button
@@ -297,36 +368,6 @@ export function PlaceholdersAndVanishInput({
         )}
       </button>
 
-      <div className="pointer-events-none absolute inset-0 flex h-12 items-center rounded-2xl">
-        <AnimatePresence mode="wait">
-          {!value && (
-            <motion.p
-              initial={{
-                y: 5,
-                opacity: 0,
-              }}
-              key={`current-placeholder-${currentPlaceholder}`}
-              animate={{
-                y: 0,
-                opacity: 1,
-              }}
-              exit={{
-                y: -15,
-                opacity: 0,
-              }}
-              transition={{
-                duration: 0.3,
-                ease: "linear",
-              }}
-              className={cn(
-                "w-[calc(100%-5rem)] truncate text-left text-sm font-normal text-neutral-500 dark:text-zinc-500 sm:text-base",
-                leftSlot ? "pl-14" : "pl-4 sm:pl-12",
-              )}
-            >
-              {placeholders[currentPlaceholder]}
-            </motion.p>
-          )}
-        </AnimatePresence>
       </div>
     </form>
   );

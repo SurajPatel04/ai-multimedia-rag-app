@@ -168,3 +168,71 @@
     animation: cell-ripple var(--duration, 600ms) ease-out var(--delay, 0ms);
   }
 }
+
+/* Monochrome Toastify Styles */
+:root {
+  --toastify-color-dark: #000000;
+  --toastify-font-family: 'Geist Variable', sans-serif;
+  --toastify-toast-min-height: 52px;
+  --toastify-toast-width: 320px;
+}
+
+.Toastify__toast {
+  @apply rounded-none border border-white/20 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)];
+  background-color: #000000 !important;
+  padding: 12px 16px;
+}
+
+.Toastify__toast-theme--dark {
+  background: #000000 !important;
+  color: #ffffff;
+}
+
+.Toastify__toast-body {
+  @apply text-sm font-bold tracking-tight uppercase;
+  margin: 0;
+  padding: 0;
+}
+
+/* Override all status colors to white for monochrome look */
+.Toastify__toast--success,
+.Toastify__toast--error,
+.Toastify__toast--info,
+.Toastify__toast--warning {
+  border: 1px solid #ffffff !important;
+}
+
+.Toastify__toast-icon svg {
+  fill: #ffffff !important;
+}
+
+.Toastify__progress-bar {
+  background: #ffffff !important;
+  height: 2px;
+}
+
+/* Ensure the background of the progress bar is dark gray/black instead of status-colored */
+.Toastify__progress-bar--bg {
+  background: rgba(255, 255, 255, 0.1) !important;
+  opacity: 1;
+}
+
+.Toastify__close-button {
+  color: #ffffff;
+  opacity: 0.8;
+}
+
+.Toastify__close-button:hover {
+  opacity: 1;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}

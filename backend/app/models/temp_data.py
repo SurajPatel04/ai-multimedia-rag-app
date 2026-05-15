@@ -30,6 +30,7 @@ class Utterance(BaseModel):
 
 class TempData(Document):
     temp_id: str 
+    file_id: str
     user_id: PydanticObjectId
     file_url: str
     file_name: str

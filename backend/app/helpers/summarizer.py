@@ -2,10 +2,9 @@ import tiktoken
 from app.models.session_document import SessionDocument
 
 # Token thresholds
-DIRECT_TOKEN_THRESHOLD   = 6_000   # below this → send full_text in one call
+DIRECT_TOKEN_THRESHOLD   = 6_000   # below this token then send full_text in one call
 CHUNK_BATCH_TOKEN_LIMIT  = 3_000   # max tokens per batch when chunking large docs
 
-# cl100k_base is close enough to Gemini's tokenizer for safety thresholds
 _encoder = tiktoken.get_encoding("cl100k_base")
 
 
@@ -116,7 +115,6 @@ Final Summary:"""
     return response.content
 
 
-# Main entry point 
 async def generate_session_summary(session_id: str, docs, llm):
 
     # print(f"\n{'='*60}")

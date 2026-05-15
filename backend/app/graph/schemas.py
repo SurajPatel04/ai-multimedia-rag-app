@@ -25,3 +25,6 @@ class AnswerSchema(BaseModel):
     media_references: Optional[
         List[MediaReference]
     ] = None
+
+class TitleGenerationSchema(BaseModel):
+    title: str

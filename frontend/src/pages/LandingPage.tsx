@@ -28,21 +28,21 @@ export default function LandingPage() {
             viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.3em] text-neutral-400 mb-10 backdrop-blur-md">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.15em] md:tracking-[0.3em] text-neutral-400 mb-6 md:mb-10 backdrop-blur-md whitespace-nowrap overflow-hidden">
               The new standard for data conversations
             </span>
-            <h1 className="bg-gradient-to-br from-white via-white to-neutral-500 bg-clip-text text-6xl md:text-[90px] font-extrabold tracking-tighter text-transparent mb-10 leading-[0.95]">
-              Intelligent insights <br />
+            <h1 className="bg-gradient-to-br from-white via-white to-neutral-500 bg-clip-text text-4xl sm:text-6xl md:text-[90px] font-extrabold tracking-tighter text-transparent mb-8 md:mb-10 leading-[1.1] md:leading-[0.95]">
+              Intelligent insights <br className="hidden sm:block" />
               <span className="text-neutral-400 font-serif italic">at the speed of thought.</span>
             </h1>
-            <p className="mx-auto max-w-2xl text-lg md:text-xl text-neutral-400 leading-relaxed mb-14 font-medium">
+            <p className="mx-auto max-w-2xl text-base md:text-xl text-neutral-400 leading-relaxed mb-10 md:mb-14 font-medium px-4 md:px-0">
               The only platform that seamlessly bridges the gap between your raw data and actionable intelligence. PDFs, Videos, and Audio now fully conversational.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-              <Link to="/signup" className="group relative flex items-center gap-3 rounded-full bg-white px-10 py-5 text-xl font-bold text-black shadow-[0_0_40px_rgba(255,255,255,0.1)] hover:bg-neutral-200 transition-all active:scale-95">
-                Begin Your AI-Powered Analysis
-                <IconArrowRight className="h-6 w-6 transition-transform group-hover:translate-x-1.5" />
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-6 px-6">
+              <Link to="/signup" className="group relative flex w-full sm:w-auto items-center justify-center gap-3 rounded-full bg-white px-8 py-4 md:px-10 md:py-5 text-lg md:text-xl font-bold text-black shadow-[0_0_40px_rgba(255,255,255,0.1)] hover:bg-neutral-200 transition-all active:scale-95">
+                Begin Your Analysis
+                <IconArrowRight className="h-5 w-5 md:h-6 md:w-6 transition-transform group-hover:translate-x-1.5" />
               </Link>
             </div>
           </motion.div>

@@ -1,5 +1,7 @@
 import { BackgroundRippleEffect } from "@/components/ui/background-ripple-effect";
 import AppRouter from "@/routes/AppRouter";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 function App() {
   return (
@@ -8,6 +10,18 @@ function App() {
       <div className="relative z-10 min-h-screen w-full">
         <AppRouter />
       </div>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
     </main>
   );
 }
