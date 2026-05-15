@@ -4,7 +4,6 @@ import authReducer from "../features/auth/authSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    // upload, chat, media, summary → added later
   },
 });
 

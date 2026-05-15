@@ -4,19 +4,27 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
+export interface PlaceholdersAndVanishInputProps {
+  placeholders: string[];
+  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onStop?: () => void;
+  leftSlot?: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  isStreaming?: boolean;
+}
+
 export function PlaceholdersAndVanishInput({
   placeholders,
   onChange,
   onSubmit,
+  onStop,
   leftSlot,
   className,
-}: {
-  placeholders: string[];
-  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-  leftSlot?: React.ReactNode;
-  className?: string;
-}) {
+  disabled,
+  isStreaming,
+}: PlaceholdersAndVanishInputProps) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -105,9 +113,7 @@ export function PlaceholdersAndVanishInput({
     }));
   }, [value]);
 
-  useEffect(() => {
-    draw();
-  }, [value, draw]);
+  // removed useEffect that called draw() on every keystroke to fix lag
 
   const animate = (start: number) => {
     const animateFrame = (pos: number = 0) => {
@@ -171,10 +177,13 @@ export function PlaceholdersAndVanishInput({
     resizeTextarea();
   }, [value, resizeTextarea]);
 
+  const formRef = useRef<HTMLFormElement>(null);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !animating) {
+    if (e.key === "Enter" && !e.shiftKey && !animating && !disabled && !isStreaming) {
       e.preventDefault();
-      vanishAndSubmit();
+      // Submit the form programmatically so onSubmit always fires
+      formRef.current?.requestSubmit();
     }
   };
 
@@ -199,6 +208,7 @@ export function PlaceholdersAndVanishInput({
   };
   return (
     <form
+      ref={formRef}
       className={cn(
         "relative mx-auto flex min-h-12 w-full max-w-xl items-end overflow-hidden rounded-2xl bg-white shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),_0px_1px_0px_0px_rgba(25,28,33,0.02),_0px_0px_0px_1px_rgba(25,28,33,0.08)] transition duration-200 dark:bg-zinc-800",
         value && "bg-gray-50",
@@ -242,43 +252,49 @@ export function PlaceholdersAndVanishInput({
 
       <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-40 w-14 bg-inherit" />
       <button
-        disabled={!value}
-        type="submit"
+        disabled={(!value && !isStreaming) || (disabled && !isStreaming)}
+        type={isStreaming ? "button" : "submit"}
+        onClick={isStreaming ? onStop : undefined}
         className={cn(
           "absolute right-3 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-black transition duration-200 disabled:bg-gray-100 dark:bg-zinc-900 dark:disabled:bg-zinc-800",
           isMultiline ? "bottom-2" : "top-1/2 -translate-y-1/2",
+          (disabled && !isStreaming) && "opacity-30 cursor-not-allowed"
         )}
       >
-        <motion.svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-gray-300 h-4 w-4"
-        >
-          <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-          <motion.path
-            d="M5 12l14 0"
-            initial={{
-              strokeDasharray: "50%",
-              strokeDashoffset: "50%",
-            }}
-            animate={{
-              strokeDashoffset: value ? 0 : "50%",
-            }}
-            transition={{
-              duration: 0.3,
-              ease: "linear",
-            }}
-          />
-          <path d="M13 18l6 -6" />
-          <path d="M13 6l6 6" />
-        </motion.svg>
+        {isStreaming ? (
+          <div className="h-2.5 w-2.5 bg-white rounded-[1px]" />
+        ) : (
+          <motion.svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-gray-300 h-4 w-4"
+          >
+            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+            <motion.path
+              d="M5 12l14 0"
+              initial={{
+                strokeDasharray: "50%",
+                strokeDashoffset: "50%",
+              }}
+              animate={{
+                strokeDashoffset: value ? 0 : "50%",
+              }}
+              transition={{
+                duration: 0.3,
+                ease: "linear",
+              }}
+            />
+            <path d="M13 18l6 -6" />
+            <path d="M13 6l6 6" />
+          </motion.svg>
+        )}
       </button>
 
       <div className="pointer-events-none absolute inset-0 flex h-12 items-center rounded-2xl">

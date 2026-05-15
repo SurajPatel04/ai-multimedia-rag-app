@@ -1,42 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useSilentTokenRefresh } from "@/hooks/useSilentTokenRefresh";
-import { authService } from "@/services/authService";
+import { useDispatch, useSelector } from "react-redux";
+import type { AppDispatch, RootState } from "@/app/store";
+import { fetchProfile } from "@/features/auth/authThunks";
 
 type AuthRouteProps = {
   redirectTo?: string;
 };
 
 const LoadingScreen = () => (
-  <div className="flex min-h-[calc(100vh-5rem)] items-center justify-center">
-    <p className="text-sm text-neutral-300">Checking session...</p>
+  <div className="flex min-h-screen items-center justify-center bg-black">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-700 border-t-white" />
   </div>
 );
 
 export function ProtectedRoute({
   redirectTo = "/login",
 }: AuthRouteProps) {
-  const [isAllowed, setIsAllowed] = useState<boolean | null>(null);
-  useSilentTokenRefresh(isAllowed === true);
+  const dispatch = useDispatch<AppDispatch>();
+  const { isAuthenticated, isInitialized } = useSelector((state: RootState) => state.auth);
+
+  useSilentTokenRefresh(isAuthenticated);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        await authService.fetchProfile();
-        setIsAllowed(true);
-      } catch {
-        setIsAllowed(false);
-      }
-    };
+    if (!isInitialized) {
+      void dispatch(fetchProfile());
+    }
+  }, [dispatch, isInitialized]);
 
-    void checkAuth();
-  }, [redirectTo]);
-
-  if (isAllowed === null) {
+  if (!isInitialized) {
     return <LoadingScreen />;
   }
 
-  if (!isAllowed) {
+  if (!isAuthenticated) {
     return <Navigate replace to={redirectTo} />;
   }
 
@@ -44,30 +41,25 @@ export function ProtectedRoute({
 }
 
 export function UnprotectedRoute({
-  redirectTo = "/me",
+  redirectTo = "/chat",
 }: AuthRouteProps) {
-  const [isAllowed, setIsAllowed] = useState<boolean | null>(null);
+  const dispatch = useDispatch<AppDispatch>();
+  const { isAuthenticated, isInitialized } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        await authService.fetchProfile();
-        setIsAllowed(false);
-      } catch {
-        setIsAllowed(true);
-      }
-    };
+    if (!isInitialized) {
+      void dispatch(fetchProfile());
+    }
+  }, [dispatch, isInitialized]);
 
-    void checkAuth();
-  }, [redirectTo]);
-
-  if (isAllowed === null) {
+  if (!isInitialized) {
     return <LoadingScreen />;
   }
 
-  if (!isAllowed) {
+  if (isAuthenticated) {
     return <Navigate replace to={redirectTo} />;
   }
 
   return <Outlet />;
 }
+

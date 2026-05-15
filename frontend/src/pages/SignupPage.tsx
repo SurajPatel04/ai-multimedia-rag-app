@@ -1,41 +1,35 @@
-import { useState } from "react";
-import type { AxiosError } from "axios";
+import { useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import SignupFormDemo, {
   type AuthFormValues,
 } from "@/components/signup-form-demo";
-import { authService } from "@/services/authService";
-
-const getErrorMessage = (error: unknown) => {
-  const axiosError = error as AxiosError<{ message?: string }>;
-  return axiosError.response?.data?.message || "Unable to create account.";
-};
+import type { AppDispatch, RootState } from "@/app/store";
+import { registerUser } from "@/features/auth/authThunks";
+import { clearError } from "@/features/auth/authSlice";
+import { useEffect } from "react";
 
 export default function SignupPage() {
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const { isLoading, error } = useSelector((state: RootState) => state.auth);
 
-  const handleSubmit = async ({
-    first_name,
-    last_name,
-    email,
-    password,
-  }: AuthFormValues) => {
-    setError(null);
-    setIsLoading(true);
+  useEffect(() => {
+    return () => {
+      dispatch(clearError());
+    };
+  }, [dispatch]);
 
-    try {
-      await authService.register({
-        first_name: first_name || "",
-        ...(last_name ? { last_name } : {}),
-        email,
-        password,
-      });
-      await authService.fetchProfile();
-      window.location.href = "/me";
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setIsLoading(false);
+  const handleSubmit = async (values: AuthFormValues) => {
+    const payload = {
+      first_name: values.first_name || "",
+      ...(values.last_name ? { last_name: values.last_name } : {}),
+      email: values.email,
+      password: values.password,
+    };
+
+    const resultAction = await dispatch(registerUser(payload));
+    if (registerUser.fulfilled.match(resultAction)) {
+      navigate("/login");
     }
   };
 
@@ -50,11 +44,15 @@ export default function SignupPage() {
         />
         <p className="mt-5 text-center text-sm text-neutral-300">
           Already have an account?{" "}
-          <a className="font-medium text-white underline" href="/login">
+          <button
+            className="font-medium text-white underline bg-transparent border-none cursor-pointer p-0"
+            onClick={() => navigate("/login")}
+          >
             Sign in
-          </a>
+          </button>
         </p>
       </div>
     </div>
   );
 }
+

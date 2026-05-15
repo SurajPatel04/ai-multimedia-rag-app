@@ -45,7 +45,7 @@ export const authService = {
   },
 
   fetchProfile: async (): Promise<User> => {
-    const res = await api.get<User>("/user/me");
-    return res.data;
+    const res = await api.get<{ success: boolean; message: string; data: User }>("/user/me");
+    return res.data.data;
   },
 };

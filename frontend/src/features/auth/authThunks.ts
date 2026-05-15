@@ -24,12 +24,12 @@ export const loginUser = createAsyncThunk<User, LoginPayload>(
   }
 );
 
-export const registerUser = createAsyncThunk<User, RegisterPayload>(
+export const registerUser = createAsyncThunk<string, RegisterPayload>(
   "auth/register",
   async (payload: RegisterPayload, { rejectWithValue }) => {
     try {
-      await authService.register(payload);
-      return await authService.fetchProfile();
+      const res = await authService.register(payload);
+      return res.message;
     } catch (error) {
       return rejectWithValue(getErrorMessage(error, "Registration failed"));
     }

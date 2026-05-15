@@ -3,16 +3,18 @@ import type { User } from "../../services/authService";
 import { loginUser, registerUser, logoutUser, fetchProfile } from "./authThunks";
 
 export interface AuthState {
-  user: User | null;          // who is logged in
-  isAuthenticated: boolean;   // protect routes
-  isLoading: boolean;         // spinner on forms
-  error: string | null;       // error on forms
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  isInitialized: boolean;
+  error: string | null;
 }
 
 const initialState: AuthState = {
   user: null,
   isAuthenticated: false,
   isLoading: false,
+  isInitialized: false,
   error: null,
 };
 
@@ -27,7 +29,7 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
 
-    // ── Login ──────────────────────────────────────────────────────
+    // Login
     builder
       .addCase(loginUser.pending, (state) => {
         state.isLoading = true;
@@ -37,23 +39,23 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload;
         state.isAuthenticated = true;
+        state.isInitialized = true;
         state.error = null;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
+        state.isInitialized = true;
         state.error = action.payload as string ?? "Login failed";
       });
 
-    // ── Register ───────────────────────────────────────────────────
+    // Register
     builder
       .addCase(registerUser.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(registerUser.fulfilled, (state, action) => {
+      .addCase(registerUser.fulfilled, (state) => {
         state.isLoading = false;
-        state.user = action.payload;
-        state.isAuthenticated = true;
         state.error = null;
       })
       .addCase(registerUser.rejected, (state, action) => {
@@ -61,15 +63,15 @@ const authSlice = createSlice({
         state.error = action.payload as string ?? "Registration failed";
       });
 
-    // ── Logout ─────────────────────────────────────────────────────
+    // Logout
     builder
       .addCase(logoutUser.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(logoutUser.fulfilled, () => initialState) // full reset
-      .addCase(logoutUser.rejected, () => initialState); // reset anyway
+      .addCase(logoutUser.fulfilled, () => initialState)
+      .addCase(logoutUser.rejected, () => initialState);
 
-    // ── Fetch Profile ──────────────────────────────────────────────
+    // Fetch Profile
     builder
       .addCase(fetchProfile.pending, (state) => {
         state.isLoading = true;
@@ -78,10 +80,10 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload;
         state.isAuthenticated = true;
+        state.isInitialized = true;
       })
-      .addCase(fetchProfile.rejected, () => {
-        // cookie invalid/expired → full reset
-        return initialState;
+      .addCase(fetchProfile.rejected, (_state) => {
+        return { ...initialState, isInitialized: true };
       });
   },
 });

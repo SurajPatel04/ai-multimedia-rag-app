@@ -15,10 +15,10 @@ export default function AppRouter() {
       </Route>
 
       <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<ChatPage />} />
         <Route path="/chat" element={<ChatPage />} />
-        <Route path="/me" element={<Navigate replace to="/dashboard" />} />
-        <Route path="/user/me" element={<Navigate replace to="/dashboard" />} />
+        <Route path="/dashboard" element={<Navigate replace to="/chat" />} />
+        <Route path="/me" element={<Navigate replace to="/chat" />} />
+        <Route path="/user/me" element={<Navigate replace to="/chat" />} />
       </Route>
 
       <Route path="*" element={<Navigate replace to="/login" />} />
