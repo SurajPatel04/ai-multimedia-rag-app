@@ -9,6 +9,7 @@ from app.router.file_upload import save_file_locally
 from fastapi import UploadFile
 import os
 from beanie import PydanticObjectId
+import uuid
 from app.models.user import User
 
 def make_pdf_file(filename="test.pdf", size=1024):
