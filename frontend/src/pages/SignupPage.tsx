@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import SignupFormDemo, {
   type AuthFormValues,
@@ -7,6 +7,7 @@ import type { AppDispatch, RootState } from "@/app/store";
 import { registerUser } from "@/features/auth/authThunks";
 import { clearError } from "@/features/auth/authSlice";
 import { useEffect } from "react";
+import ragIcon from "@/assets/rag.png";
 
 export default function SignupPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -34,8 +35,14 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center justify-center">
-      <div className="w-full">
+    <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 relative">
+      <div className="absolute top-8 left-8 md:left-12">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <img src={ragIcon} alt="Logo" className="h-8 w-8 object-contain" />
+          <span className="text-xl font-bold tracking-tight text-white">AI Chat</span>
+        </Link>
+      </div>
+      <div className="w-full max-w-md">
         <SignupFormDemo
           error={error}
           isLoading={isLoading}

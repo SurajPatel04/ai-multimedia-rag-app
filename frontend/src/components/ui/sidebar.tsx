@@ -80,11 +80,11 @@ export const Sidebar = ({
   );
 };
 
-export const SidebarBody = (props: React.ComponentProps<typeof motion.div>) => {
+export const SidebarBody = (props: React.ComponentProps<typeof motion.div> & { centerContent?: React.ReactNode; rightContent?: React.ReactNode }) => {
   return (
     <>
       <DesktopSidebar {...props} />
-      <MobileSidebar {...(props as React.ComponentProps<"div">)} />
+      <MobileSidebar {...(props as any)} />
     </>
   );
 };
@@ -92,18 +92,21 @@ export const SidebarBody = (props: React.ComponentProps<typeof motion.div>) => {
 export const DesktopSidebar = ({
   className,
   children,
+  centerContent,
+  rightContent,
   ...props
-}: React.ComponentProps<typeof motion.div>) => {
+}: React.ComponentProps<typeof motion.div> & { centerContent?: React.ReactNode; rightContent?: React.ReactNode }) => {
   const { open, setOpen, animate, autoOpen } = useSidebar();
   return (
     <>
       <motion.div
         className={cn(
-          "h-full px-4 py-4 hidden  md:flex md:flex-col bg-neutral-100 dark:bg-neutral-800 w-[300px] shrink-0",
+          "h-full py-4 hidden md:flex md:flex-col bg-black border-r border-neutral-800 shrink-0",
+          open ? "px-4" : "px-2",
           className
         )}
         animate={{
-          width: animate ? (open ? "300px" : "60px") : "300px",
+          width: animate ? (open ? "300px" : "68px") : "300px",
         }}
         onMouseEnter={() => {
           if (autoOpen) {
@@ -126,22 +129,28 @@ export const DesktopSidebar = ({
 export const MobileSidebar = ({
   className,
   children,
+  centerContent,
+  rightContent,
   ...props
-}: React.ComponentProps<"div">) => {
+}: React.ComponentProps<"div"> & { centerContent?: React.ReactNode; rightContent?: React.ReactNode }) => {
   const { open, setOpen } = useSidebar();
   return (
     <>
       <div
         className={cn(
-          "h-10 px-4 py-4 flex flex-row md:hidden  items-center justify-between bg-neutral-100 dark:bg-neutral-800 w-full"
+          "h-14 px-3 flex flex-row md:hidden items-center justify-between bg-black border-b border-neutral-800 w-full"
         )}
         {...props}
       >
-        <div className="flex justify-end z-20 w-full">
+        <div className="flex items-center gap-4 z-20">
           <IconMenu2
-            className="text-neutral-800 dark:text-neutral-200"
+            className="text-neutral-200 h-6 w-6 cursor-pointer"
             onClick={() => setOpen(!open)}
           />
+          {centerContent}
+        </div>
+        <div className="flex items-center z-20">
+          {rightContent}
         </div>
         <AnimatePresence>
           {open && (
@@ -154,15 +163,15 @@ export const MobileSidebar = ({
                 ease: "easeInOut",
               }}
               className={cn(
-                "fixed h-full w-full inset-0 bg-white dark:bg-neutral-900 p-10 z-[100] flex flex-col justify-between",
+                "fixed h-full w-full inset-0 bg-black p-6 z-[100] flex flex-col justify-between",
                 className
               )}
             >
               <div
-                className="absolute right-10 top-10 z-50 text-neutral-800 dark:text-neutral-200"
+                className="absolute right-6 top-6 z-50 text-neutral-200 cursor-pointer"
                 onClick={() => setOpen(!open)}
               >
-                <IconX />
+                <IconX className="h-6 w-6" />
               </div>
               {children}
             </motion.div>
@@ -186,7 +195,8 @@ export const SidebarLink = ({
     <Link
       to={link.href}
       className={cn(
-        "flex items-center justify-start gap-2 group/sidebar py-2 px-2 rounded-lg transition-colors hover:bg-neutral-900 focus:bg-neutral-900 active:bg-neutral-800 outline-none focus:outline-none",
+        "flex items-center gap-2 group/sidebar py-2 rounded-lg transition-colors hover:bg-neutral-900 focus:bg-neutral-900 active:bg-neutral-800 outline-none focus:outline-none",
+        open ? "justify-start px-0" : "justify-center px-2",
         className
       )}
       {...(props as any)}

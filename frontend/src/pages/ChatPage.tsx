@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState, Fragment } from "react";
 import { useSearchParams, Link } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ragIcon from "@/assets/rag.png";
+import { motion, AnimatePresence } from "motion/react";
 import { ArrowDown, Copy, Check } from "lucide-react";
 import {
   IconArrowLeft,
@@ -16,8 +18,8 @@ import {
   IconPaperclip,
   IconPencil,
   IconPlus,
-  IconSearch,
   IconTrash,
+  IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-vanish-input";
@@ -33,6 +35,7 @@ import {
   type ChatMessage,
   type SSEEvent,
 } from "@/services/chatService";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 
 
@@ -340,7 +343,7 @@ const ChatSessionItem = ({
 };
 
 export default function ChatPage() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(window.innerWidth >= 768);
   const [user, setUser] = useState<User | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -364,11 +367,40 @@ export default function ChatPage() {
 
   const [menuOpenSessionId, setMenuOpenSessionId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileToggleRef = useRef<HTMLButtonElement>(null);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDanger?: boolean;
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => { },
+  });
+
+  const showConfirmation = (config: Omit<typeof confirmModal, "isOpen">) => {
+    setConfirmModal({ ...config, isOpen: true });
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpenSessionId(null);
+      }
+
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(e.target as Node) &&
+        profileToggleRef.current &&
+        !profileToggleRef.current.contains(e.target as Node)
+      ) {
+        setIsProfileMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -400,27 +432,40 @@ export default function ChatPage() {
 
   // Delete session handler
   const handleDeleteSession = useCallback(async (sessionId: string) => {
-    try {
-      await chatService.deleteSession(sessionId);
-      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
-      if (activeSession?.session_id === sessionId) {
-        setActiveSession(null);
-        setSessionId(null);
-        setActiveMessages([]);
-        setSearchParams({}, { replace: true });
-        lastLoadedSessionIdRef.current = null;
+    const sessionToDelete = sessions.find(s => s.session_id === sessionId);
+    const sessionTitle = sessionToDelete?.title || "this chat";
+
+    showConfirmation({
+      title: "Delete Chat",
+      message: `Are you sure you want to delete "${sessionTitle}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await chatService.deleteSession(sessionId);
+          setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+          if (activeSession?.session_id === sessionId) {
+            setActiveSession(null);
+            setSessionId(null);
+            setActiveMessages([]);
+            setSearchParams({}, { replace: true });
+            lastLoadedSessionIdRef.current = null;
+          }
+        } catch (err) {
+          console.error("Failed to delete session", err);
+        } finally {
+          setMenuOpenSessionId(null);
+        }
       }
-    } catch (err) {
-      console.error("Failed to delete session", err);
-    } finally {
-      setMenuOpenSessionId(null);
-    }
-  }, [activeSession, setSearchParams]);
+    });
+  }, [activeSession, sessions, setSearchParams]);
 
   const handleScroll = () => {
     if (scrollContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-      setShowScrollToBottom(scrollHeight - scrollTop - clientHeight > 100);
+      // Only show button if content is actually scrollable and we are far from bottom
+      const canScroll = scrollHeight > clientHeight + 10;
+      setShowScrollToBottom(canScroll && (scrollHeight - scrollTop - clientHeight > 100));
     }
   };
 
@@ -506,13 +551,15 @@ export default function ChatPage() {
     setAttachedFiles([]);
     try {
       const res = await chatService.fetchSessionDetail(session.session_id);
-      if (res.success) {
+      if (res.success && lastLoadedSessionIdRef.current === session.session_id) {
         setActiveMessages(res.data.messages);
       }
     } catch (err) {
       console.error("Failed to load session messages", err);
     } finally {
-      setIsLoadingMessages(false);
+      if (lastLoadedSessionIdRef.current === session.session_id) {
+        setIsLoadingMessages(false);
+      }
     }
   }, []);
 
@@ -556,17 +603,25 @@ export default function ChatPage() {
 
 
 
-  const handleLogout = async () => {
-    try {
-      await authService.logout();
-    } catch {
-    } finally {
-      document.cookie.split(";").forEach((c) => {
-        const name = c.split("=")[0].trim();
-        document.cookie = `${name}=;expires=${new Date(0).toUTCString()};path=/`;
-      });
-      window.location.href = "/login";
-    }
+  const handleLogout = () => {
+    showConfirmation({
+      title: "Logout",
+      message: "Are you sure you want to log out of your account?",
+      confirmText: "Logout",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await authService.logout();
+        } catch {
+        } finally {
+          document.cookie.split(";").forEach((c) => {
+            const name = c.split("=")[0].trim();
+            document.cookie = `${name}=;expires=${new Date(0).toUTCString()};path=/`;
+          });
+          window.location.href = "/login";
+        }
+      }
+    });
   };
 
   const getInitials = (user: User) => {
@@ -885,35 +940,50 @@ export default function ChatPage() {
   };
 
   return (
-    <section className="flex h-screen w-full overflow-hidden bg-black">
+    <section className="flex h-screen w-full flex-col md:flex-row overflow-hidden bg-black">
       <Sidebar autoOpen={false} open={open} setOpen={setOpen}>
-        <SidebarBody className="justify-between gap-6 border-r border-neutral-800 bg-black">
+        <SidebarBody
+          className="justify-between gap-6 border-r border-neutral-800 bg-black"
+          centerContent={
+            <span className="text-sm font-semibold text-white truncate max-w-[200px]">
+              {activeSession ? activeSession.title : "Chat"}
+            </span>
+          }
+          rightContent={
+            user ? (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 text-xs font-medium text-white border border-neutral-700">
+                {getInitials(user)}
+              </div>
+            ) : null
+          }
+        >
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className={`group/sidebar-toggle relative z-20 flex h-16 items-center gap-2 py-1 ${open ? "justify-start" : "justify-center"}`}>
               <Link
                 aria-label="AI Chat"
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-transparent outline-none focus:outline-none"
+                className="flex h-12 shrink-0 items-center justify-start rounded-lg bg-transparent outline-none focus:outline-none -ml-1"
                 to="/chat"
               >
-                <img src={ragIcon} alt="RAG Icon" className="h-full w-full object-contain" />
+                <img src={ragIcon} alt="RAG Icon" className="h-10 w-10 object-contain" />
               </Link>
               {open ? (
-                <span className="text-sm font-medium text-white">AI Chat</span>
+                <span className="text-sm font-semibold text-white">AI Chat</span>
               ) : null}
               <button
                 aria-label={open ? "Collapse sidebar" : "Open sidebar"}
                 className={
-                  open
-                    ? "ml-auto flex h-8 w-8 items-center justify-center rounded-md text-neutral-300 transition hover:bg-neutral-900 hover:text-white outline-none focus:outline-none focus:bg-neutral-900 active:bg-neutral-800"
-                    : "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md bg-neutral-900/90 text-neutral-300 opacity-0 transition group-hover/sidebar-toggle:opacity-100 hover:text-white backdrop-blur-sm outline-none focus:outline-none active:bg-neutral-800"
+                  cn(
+                    "ml-auto h-9 w-9 items-center justify-center rounded-md text-neutral-300 transition hover:bg-neutral-900 hover:text-white outline-none focus:outline-none focus:bg-neutral-900 active:bg-neutral-800 hidden md:flex",
+                    !open && "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-neutral-900/90 opacity-0 group-hover/sidebar-toggle:opacity-100 backdrop-blur-sm"
+                  )
                 }
                 onClick={() => setOpen((value) => !value)}
                 type="button"
               >
                 {open ? (
-                  <IconLayoutSidebarLeftCollapse className="h-5 w-5" />
+                  <IconLayoutSidebarLeftCollapse className="h-6 w-6" />
                 ) : (
-                  <IconLayoutSidebarLeftExpand className="h-5 w-5" />
+                  <IconLayoutSidebarLeftExpand className="h-6 w-6" />
                 )}
               </button>
             </div>
@@ -923,16 +993,10 @@ export default function ChatPage() {
                 link={{
                   label: "New chat",
                   href: "/chat",
-                  icon: <IconPlus className="h-5 w-5 shrink-0 text-neutral-200" />,
+                  icon: <IconPlus className="h-6 w-6 shrink-0 text-neutral-200" />,
                 }}
               />
-              <SidebarLink
-                link={{
-                  label: "Search chats",
-                  href: "/chat",
-                  icon: <IconSearch className="h-5 w-5 shrink-0 text-neutral-200" />,
-                }}
-              />
+
 
             </div>
 
@@ -976,25 +1040,38 @@ export default function ChatPage() {
           </div>
 
           <div className="relative flex flex-col gap-2">
-            {isProfileMenuOpen && user && (
-              <div className="absolute bottom-12 left-0 z-50 w-64 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-2xl">
-                <div className="mb-2 truncate px-2 py-1.5 text-sm font-medium text-neutral-300">
-                  {user.email}
-                </div>
-                <div className="h-px bg-neutral-800 mb-2"></div>
-                <button
-                  className="flex w-full items-center justify-start gap-2 rounded-lg px-2 py-2 text-sm text-red-400 transition hover:bg-neutral-800 hover:text-red-300"
-                  onClick={handleLogout}
-                  type="button"
+            <AnimatePresence>
+              {isProfileMenuOpen && user && (
+                <motion.div
+                  ref={profileMenuRef}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="absolute bottom-14 left-0 z-50 w-full rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-2xl"
                 >
-                  <IconArrowLeft className="h-4 w-4 shrink-0" />
-                  <span>Logout</span>
-                </button>
-              </div>
-            )}
+                  <div className="mb-2 truncate px-2 py-1.5 text-sm font-medium text-neutral-300">
+                    {user.email}
+                  </div>
+                  <div className="h-px bg-neutral-800 mb-2"></div>
+                  <button
+                    className="flex w-full items-center justify-start gap-2 rounded-lg px-2 py-2 text-sm text-red-400 transition hover:bg-neutral-800 hover:text-red-300"
+                    onClick={handleLogout}
+                    type="button"
+                  >
+                    <IconArrowLeft className="h-4 w-4 shrink-0" />
+                    <span>Logout</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <button
-              className="group flex w-full items-center gap-3 rounded-lg p-2 transition hover:bg-neutral-900"
+              ref={profileToggleRef}
+              className={`group flex items-center transition-all duration-200 hover:bg-neutral-900 ${open
+                ? "w-full gap-3 rounded-lg p-2"
+                : "h-10 w-10 justify-center rounded-full mx-auto"
+                }`}
               onClick={() => {
                 if (open) {
                   setIsProfileMenuOpen((prev) => !prev);
@@ -1020,8 +1097,8 @@ export default function ChatPage() {
         </SidebarBody>
       </Sidebar>
 
-      <div className="flex min-w-0 flex-1 flex-col bg-neutral-950">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-800 px-4 md:px-6">
+      <div className="flex min-w-0 flex-1 flex-col h-full bg-neutral-950 overflow-hidden">
+        <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-neutral-800 px-4 md:px-6 bg-black z-10">
           <div>
             <h1 className="text-sm font-semibold text-white">
               {activeSession ? activeSession.title : "Chat"}
@@ -1031,20 +1108,68 @@ export default function ChatPage() {
 
         <div className="relative flex-1 min-h-0">
           <div
-            className="h-full overflow-y-auto px-4 py-6 md:px-10 [overflow-anchor:auto]"
+            className="h-full overflow-y-auto px-2 py-6 sm:px-4 md:px-10 [overflow-anchor:auto]"
             ref={scrollContainerRef}
             onScroll={handleScroll}
           >
-            <div className="mx-auto flex max-w-3xl flex-col gap-6">
+            <div className={cn(
+              "mx-auto flex max-w-3xl flex-col gap-6",
+              (!activeSession && activeMessages.length === 0) ? "h-full justify-center" : ""
+            )}>
               {/* Empty state */}
               {!activeSession && !isLoadingMessages && activeMessages.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-neutral-900">
-                    <IconMessage className="h-7 w-7 text-neutral-500" />
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className="flex flex-col items-center justify-center py-4 md:py-8 text-center px-4"
+                >
+
+
+                  <h2 className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-3xl md:text-5xl font-bold tracking-tight text-transparent mb-4">
+                    What can I help with?
+                  </h2>
+                  <p className="max-w-md text-base text-neutral-400 mb-12">
+                    Analyze documents, extract insights from media, and chat with your project's knowledge base.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-4xl">
+                    {[
+                      {
+                        title: "Document RAG",
+                        desc: "Analyze PDFs for key information",
+                        icon: <IconFile className="h-5 w-5 text-neutral-400" />,
+                        bg: "hover:border-neutral-700"
+                      },
+                      {
+                        title: "Media Intelligence",
+                        desc: "Insights from video and audio content.",
+                        icon: <IconVideo className="h-5 w-5 text-neutral-400" />,
+                        bg: "hover:border-neutral-700"
+                      },
+                      {
+                        title: "Project Memory",
+                        desc: "Consistent context across all sessions.",
+                        icon: <IconMessage className="h-5 w-5 text-neutral-400" />,
+                        bg: "hover:border-neutral-700"
+                      }
+                    ].map((feature, i) => (
+                      <motion.div
+                        key={feature.title}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 * i + 0.3 }}
+                        className={`flex flex-col items-start p-5 rounded-2xl border border-neutral-800 bg-neutral-900/50 backdrop-blur-sm transition-all duration-300 ${feature.bg} text-left group cursor-default`}
+                      >
+                        <div className="mb-3 p-2 rounded-lg bg-neutral-800 group-hover:bg-neutral-700 transition-colors duration-300">
+                          {feature.icon}
+                        </div>
+                        <h3 className="font-semibold text-white mb-1">{feature.title}</h3>
+                        <p className="text-sm text-neutral-500 leading-snug">{feature.desc}</p>
+                      </motion.div>
+                    ))}
                   </div>
-                  <p className="text-base font-medium text-neutral-400">Select a chat to view messages</p>
-                  <p className="mt-1 text-sm text-neutral-600">Or start a new conversation</p>
-                </div>
+                </motion.div>
               )}
 
               {/* Loading spinner */}
@@ -1055,131 +1180,136 @@ export default function ChatPage() {
               )}
 
               {/* Messages */}
-              {activeMessages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}-${message.created_at}`}
-                  className={message.role === "human" ? "group flex justify-end" : "group flex justify-start"}
-                >
-                  <div className={`flex flex-col gap-2 ${message.role === "human" ? "max-w-[80%] items-end" : "w-full"}`}>
-                    {/* File references */}
-                    {message.role === "human" && message.file_references.length > 0 && (
-                      <div className="flex flex-col items-end gap-2">
-                        {message.file_references.map((ref, idx) => {
-                          const isVideo = ref.content_type?.startsWith("video/") || ref.file_type?.startsWith("video");
-                          const isAudio = ref.content_type?.startsWith("audio/") || ref.file_type?.startsWith("audio");
-                          const mediaUrl = ref.file_url?.startsWith("http") || ref.file_url?.startsWith("blob:")
-                            ? ref.file_url
-                            : ref.file_url
-                              ? `${import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || "http://localhost:8000"}${ref.file_url.startsWith("/") ? "" : "/"}${ref.file_url}`
-                              : "";
+              <AnimatePresence initial={false}>
+                {activeMessages.map((message, index) => (
+                  <motion.div
+                    key={`${message.role}-${index}-${message.created_at}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className={message.role === "human" ? "group flex justify-end" : "group flex justify-start"}
+                  >
+                    <div className={`flex flex-col gap-2 ${message.role === "human" ? "max-w-[80%] items-end" : "w-full"}`}>
+                      {/* File references */}
+                      {message.role === "human" && message.file_references.length > 0 && (
+                        <div className="flex flex-col items-end gap-2">
+                          {message.file_references.map((ref, idx) => {
+                            const isVideo = ref.content_type?.startsWith("video/") || ref.file_type?.startsWith("video");
+                            const isAudio = ref.content_type?.startsWith("audio/") || ref.file_type?.startsWith("audio");
+                            const mediaUrl = ref.file_url?.startsWith("http") || ref.file_url?.startsWith("blob:")
+                              ? ref.file_url
+                              : ref.file_url
+                                ? `${import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || "http://localhost:8000"}${ref.file_url.startsWith("/") ? "" : "/"}${ref.file_url}`
+                                : "";
 
-                          if (isVideo && mediaUrl) {
+                            if (isVideo && mediaUrl) {
+                              return (
+                                <div key={ref.document_id || idx} className="flex max-w-sm flex-col gap-2 overflow-hidden rounded-2xl border border-neutral-800 bg-black p-2 shadow-sm">
+                                  <video src={mediaUrl} controls className="max-h-64 w-full rounded-lg bg-black object-contain" />
+                                  <span className="truncate px-2 pb-1 text-xs font-medium text-neutral-400">{ref.file_name}</span>
+                                </div>
+                              );
+                            }
+
+                            if (isAudio && mediaUrl) {
+                              return (
+                                <div key={ref.document_id || idx} className="flex w-72 max-w-full flex-col gap-2 overflow-hidden rounded-2xl border border-neutral-800 bg-black p-2 shadow-sm">
+                                  <audio src={mediaUrl} controls className="h-10 w-full" />
+                                  <span className="truncate px-2 pb-1 text-xs font-medium text-neutral-400">{ref.file_name}</span>
+                                </div>
+                              );
+                            }
+
                             return (
-                              <div key={ref.document_id || idx} className="flex max-w-sm flex-col gap-2 overflow-hidden rounded-2xl border border-neutral-800 bg-black p-2 shadow-sm">
-                                <video src={mediaUrl} controls className="max-h-64 w-full rounded-lg bg-black object-contain" />
-                                <span className="truncate px-2 pb-1 text-xs font-medium text-neutral-400">{ref.file_name}</span>
+                              <div
+                                key={ref.document_id || idx}
+                                className="flex w-fit max-w-full items-center gap-3 rounded-2xl border border-neutral-800 bg-black p-2 pr-4 shadow-sm"
+                              >
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white shadow-inner">
+                                  <IconFile className="h-6 w-6" />
+                                </div>
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="truncate text-sm font-semibold text-white">
+                                    {ref.file_name}
+                                  </span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                    {ref.file_type || "Document"}
+                                  </span>
+                                </div>
                               </div>
                             );
-                          }
-
-                          if (isAudio && mediaUrl) {
-                            return (
-                              <div key={ref.document_id || idx} className="flex w-72 max-w-full flex-col gap-2 overflow-hidden rounded-2xl border border-neutral-800 bg-black p-2 shadow-sm">
-                                <audio src={mediaUrl} controls className="h-10 w-full" />
-                                <span className="truncate px-2 pb-1 text-xs font-medium text-neutral-400">{ref.file_name}</span>
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={ref.document_id || idx}
-                              className="flex w-fit max-w-full items-center gap-3 rounded-2xl border border-neutral-800 bg-black p-2 pr-4 shadow-sm"
-                            >
-                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white shadow-inner">
-                                <IconFile className="h-6 w-6" />
-                              </div>
-                              <div className="flex flex-col overflow-hidden">
-                                <span className="truncate text-sm font-semibold text-white">
-                                  {ref.file_name}
-                                </span>
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                                  {ref.file_type || "Document"}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div
-                      className={
-                        message.role === "human"
-                          ? "rounded-2xl rounded-tr-sm bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100"
-                          : "flex-1 text-sm text-neutral-100"
-                      }
-                    >
-                      {/* Typing indicator for empty AI message while streaming */}
-                      {message.role === "ai" && !message.content && isSending ? (
-                        <div className="flex items-center gap-1 py-2">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "0ms" }} />
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "150ms" }} />
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "300ms" }} />
+                          })}
                         </div>
-                      ) : (
-                        <>
-                          {/* Message content — ReactMarkdown */}
-                          <ReactMarkdown
-                            components={{
-                              p: ({ children }) => <p className="mb-1 text-sm leading-relaxed">{processMarkdownChildren(children)}</p>,
-                              ul: ({ children }) => <ul className="mb-1 list-disc space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ul>,
-                              ol: ({ children }) => <ol className="mb-1 list-decimal space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ol>,
-                              li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children)}</li>,
-                              strong: ({ children }) => <strong className="font-semibold text-white">{processMarkdownChildren(children)}</strong>,
-                              em: ({ children }) => <em className="italic text-neutral-300">{processMarkdownChildren(children)}</em>,
-                              code: ({ className, children, ...props }) => {
-                                const match = /language-(\w+)/.exec(className || "");
-                                return match ? (
-                                  <CodeBlock language={match[1]} value={String(children).replace(/\n$/, "")} />
-                                ) : (
-                                  <code className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[13px] text-emerald-400" {...props}>
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              h1: ({ children }) => <h1 className="mb-1 text-lg font-bold text-white">{children}</h1>,
-                              h2: ({ children }) => <h2 className="mb-1 text-base font-semibold text-white">{children}</h2>,
-                              h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold text-neutral-200">{children}</h3>,
-                            }}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                          {/* Blinking cursor while AI response is streaming */}
-                          {message.role === "ai" && isSending && index === activeMessages.length - 1 && (
-                            <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-neutral-400" />
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {/* Action Toolbar & Token usage */}
-                    <div className={`flex flex-col ${message.role === "human" ? "items-end" : "items-start"}`}>
-                      {message.content && !(isSending && index === activeMessages.length - 1) && (
-                        <MessageActionToolbar text={message.content} isHuman={message.role === "human"} />
                       )}
 
-                      {/* Token usage footer for AI messages */}
-                      {message.role === "ai" && message.completion_tokens != null && (
-                        <p className="mt-1.5 text-[11px] text-neutral-600">
-                          <span className="text-neutral-500">Completion:</span>{" "}
-                          {message.completion_tokens.toLocaleString()} tokens
-                        </p>
-                      )}
+                      <div
+                        className={
+                          message.role === "human"
+                            ? "rounded-2xl rounded-tr-sm bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100"
+                            : "flex-1 text-sm text-neutral-100"
+                        }
+                      >
+                        {/* Typing indicator for empty AI message while streaming */}
+                        {message.role === "ai" && !message.content && isSending ? (
+                          <div className="flex items-center gap-1 py-2">
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "0ms" }} />
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "150ms" }} />
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-neutral-500" style={{ animationDelay: "300ms" }} />
+                          </div>
+                        ) : (
+                          <>
+                            {/* Message content — ReactMarkdown */}
+                            <ReactMarkdown
+                              components={{
+                                p: ({ children }) => <p className="mb-1 text-sm leading-relaxed">{processMarkdownChildren(children)}</p>,
+                                ul: ({ children }) => <ul className="mb-1 list-disc space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ul>,
+                                ol: ({ children }) => <ol className="mb-1 list-decimal space-y-0.5 pl-5 text-sm">{processMarkdownChildren(children)}</ol>,
+                                li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children)}</li>,
+                                strong: ({ children }) => <strong className="font-semibold text-white">{processMarkdownChildren(children)}</strong>,
+                                em: ({ children }) => <em className="italic text-neutral-300">{processMarkdownChildren(children)}</em>,
+                                code: ({ className, children, ...props }) => {
+                                  const match = /language-(\w+)/.exec(className || "");
+                                  return match ? (
+                                    <CodeBlock language={match[1]} value={String(children).replace(/\n$/, "")} />
+                                  ) : (
+                                    <code className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[13px] text-emerald-400" {...props}>
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                                h1: ({ children }) => <h1 className="mb-1 text-lg font-bold text-white">{children}</h1>,
+                                h2: ({ children }) => <h2 className="mb-1 text-base font-semibold text-white">{children}</h2>,
+                                h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold text-neutral-200">{children}</h3>,
+                              }}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                            {/* Blinking cursor while AI response is streaming */}
+                            {message.role === "ai" && isSending && index === activeMessages.length - 1 && (
+                              <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-neutral-400" />
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Action Toolbar & Token usage */}
+                      <div className={`flex flex-col ${message.role === "human" ? "items-end" : "items-start"}`}>
+                        {message.content && !(isSending && index === activeMessages.length - 1) && (
+                          <MessageActionToolbar text={message.content} isHuman={message.role === "human"} />
+                        )}
+
+                        {/* Token usage footer for AI messages */}
+                        {message.role === "ai" && message.completion_tokens != null && (
+                          <p className="mt-1.5 text-[11px] text-neutral-600">
+                            <span className="text-neutral-500">Completion:</span>{" "}
+                            {message.completion_tokens.toLocaleString()} tokens
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
 
               <div ref={messagesEndRef} />
             </div>
@@ -1198,7 +1328,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="border-t border-neutral-800 p-4">
+        <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 p-4">
           <div className="mx-auto max-w-3xl">
             {attachedFiles.length > 0 && (
               <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -1281,6 +1411,15 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        isDanger={confirmModal.isDanger}
+      />
     </section>
   );
 }
