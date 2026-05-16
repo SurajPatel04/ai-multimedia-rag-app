@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { authService } from "@/services/authService";
 
-const DEFAULT_REFRESH_MS = 60_000;
+const DEFAULT_REFRESH_MS = 3_000_000;
 const REFRESH_BUFFER_MS = 10_000;
 
 const parseTtlToMs = (ttl?: string) => {
