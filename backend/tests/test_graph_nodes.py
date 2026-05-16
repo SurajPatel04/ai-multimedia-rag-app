@@ -195,9 +195,9 @@ async def test_title_generator_generates_title():
 
 
 async def test_title_generator_skips_if_not_first_message():
-
-    state = make_state(query="Tell me more", message_index=2)
-    result = await title_generator_node(state)
+    with patch("app.graph.nodes.title_generator_node.get_google_llm", return_value=MagicMock()):
+        state = make_state(query="Tell me more", message_index=2)
+        result = await title_generator_node(state)
     assert result == {}
 
 async def test_mongo_db_retrieve_no_docs():
@@ -430,7 +430,7 @@ async def test_run_summarizer_generates_summary():
 
     mock_llm.ainvoke.assert_called_once()
     mock_graph.aupdate_state.assert_called_once()
-    
+
 def test_should_generate_title_when_title_empty():
     state = make_state(title="")
     assert should_generate_title(state) == "title_generator"
