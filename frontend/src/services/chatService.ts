@@ -3,7 +3,7 @@ import api from "./api";
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
-  "http://localhost:8000/api/v1";
+  "/api/v1";
 
 export interface ChatSession {
   session_id: string;
