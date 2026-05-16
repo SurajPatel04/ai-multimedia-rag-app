@@ -2,9 +2,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.graph.state import State
 from app.graph.schemas import QueryRouterState
-from app.utils.llm import llm
+from app.utils.llm import get_google_llm
 
 async def router_query_node(state: State):
+    llm = get_google_llm()
 
     # print("----- QUERY ROUTER NODE -----")
     # print("Query:", state.query)

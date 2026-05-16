@@ -1,8 +1,6 @@
 from app.graph.state import State
 from app.helpers.vector_db import vector_search
-from app.utils.embeddings import get_embeddings
-
-embeddings = get_embeddings()
+from app.utils.embeddings import get_google_embeddings
 
 
 def format_time(seconds: float) -> str:
@@ -11,6 +9,7 @@ def format_time(seconds: float) -> str:
 
 
 async def vector_search_node(state: State):
+    embeddings = get_google_embeddings()
     print("----- VECTOR SEARCH NODE -----")
 
     queries = [state.query, *(state.extra_query or [])]

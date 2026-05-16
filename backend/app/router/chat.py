@@ -16,16 +16,13 @@ from app.models.chat_message import ChatMessage
 from app.schemas.chat import ChatRequest, UpdateSessionTitleRequest
 from app.helpers.vector_db import vector_search
 from app.services.file_processor import embed_and_store
-from app.utils.embeddings import get_embeddings, get_google_embeddings
-from app.utils.llm import llm, INPUT_COST, OUTPUT_COST, google_llm
+from app.utils.llm import INPUT_COST, OUTPUT_COST, get_google_llm
 from app.helpers.summarizer import generate_session_summary
 from app.graph.workflow import graph
 from app.graph.nodes.memory_summarizer_node import run_summarizer_background
 from app.models.chat_message import FileReference 
 from app.utils.file_upload_supabase import get_fresh_signed_url
 
-
-embeddings = get_google_embeddings()
 
 router = APIRouter(
     prefix="/chat",
@@ -107,10 +104,8 @@ async def migrate_temp_to_session(
 
 @router.post("/query")
 async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
-
+    google_llm = get_google_llm()
     try:
-
-
         is_new_session = not payload.session_id
         session_id = (
             payload.session_id
@@ -342,6 +337,7 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
         raise
 
     except Exception as e:
+        print("Error in /chat/query:", (e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=repr(e)

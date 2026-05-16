@@ -1,8 +1,9 @@
 import json
-from app.utils.llm import llm, INPUT_COST, OUTPUT_COST
+from app.utils.llm import get_google_llm, INPUT_COST, OUTPUT_COST
 
 
 def stream_response(query: str, llm):
+    llm = get_google_llm()
     full_response = ""
 
     for chunk in llm.stream(query):

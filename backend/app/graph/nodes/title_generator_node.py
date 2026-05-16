@@ -1,11 +1,11 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.graph.state import State
-from app.utils.llm import llm
+from app.utils.llm import get_google_llm
 from app.graph.schemas import TitleGenerationSchema
 from app.models.chat_session import ChatSession
 
 async def title_generator_node(state: State):
-
+    llm = get_google_llm()
     # print("----- TITLE GENERATOR NODE -----")
 
     if state.message_index > 0:

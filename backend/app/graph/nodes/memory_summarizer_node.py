@@ -1,6 +1,6 @@
 import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
-from app.utils.llm import llm
+from app.utils.llm import get_google_llm
 from app.graph.workflow import graph
 
 # Thresholds
@@ -11,15 +11,16 @@ TRIGGER_TOKEN_COUNT       = 4_000
 _encoder = tiktoken.get_encoding("cl100k_base")
 
 
-def count_tokens(text: str) -> int:
+def count_tokens(text):
     return len(_encoder.encode(text))
 
 
-def count_history_tokens(chat_history: list[BaseMessage]) -> int:
+def count_history_tokens(chat_history: list[BaseMessage]):
     return sum(count_tokens(msg.content) for msg in chat_history)
 
 
-def should_summarize(chat_history: list[BaseMessage]) -> tuple[bool, str]:
+def should_summarize(chat_history: list[BaseMessage]):
+
     msg_count    = len(chat_history)
     total_tokens = count_history_tokens(chat_history)
 
@@ -33,7 +34,7 @@ def should_summarize(chat_history: list[BaseMessage]) -> tuple[bool, str]:
 
 
 async def run_summarizer_background(state: dict, config: dict):
-
+    llm = get_google_llm()
     chat_history = state.get("chat_history", [])
 
     triggered, reason = should_summarize(chat_history)
