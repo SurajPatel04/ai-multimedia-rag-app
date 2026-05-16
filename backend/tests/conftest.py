@@ -3,7 +3,7 @@ import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from asgi_lifespan import LifespanManager
 from app.models import User, RefreshToken
-from main import app
+from app.main import app
 
 @pytest_asyncio.fixture(scope="session")
 async def initialized_app():
