@@ -119,19 +119,16 @@ async def test_router_returns_vector_search():
     mock_response.target_files = ["test.pdf"]
     mock_response.extra_query = ["alternative query"]
 
-    with patch(
-        "app.graph.nodes.router_query_node.llm"
-    ) as mock_llm:
-        mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-            return_value=mock_response
-        )
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("app.graph.nodes.router_query_node.get_google_llm", return_value=mock_llm):
         state = make_state(query="What is Python?", uploaded_files=["test.pdf"])
         result = await router_query_node(state)
 
-        assert result["mode"] == "vector_search"
-        assert result["target_files"] == ["test.pdf"]
-        assert result["extra_query"] == ["alternative query"]
-
+    assert result["mode"] == "vector_search"
+    assert result["target_files"] == ["test.pdf"]
+    assert result["extra_query"] == ["alternative query"]
 
 async def test_router_returns_direct_llm():
     mock_response = MagicMock()
@@ -139,15 +136,15 @@ async def test_router_returns_direct_llm():
     mock_response.target_files = None
     mock_response.extra_query = None
 
-    with patch("app.graph.nodes.router_query_node.llm") as mock_llm:
-        mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-            return_value=mock_response
-        )
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("app.graph.nodes.router_query_node.get_google_llm", return_value=mock_llm):
         state = make_state(query="Hello!")
         result = await router_query_node(state)
 
-        assert result["mode"] == "direct_llm"
-        assert result["extra_query"] == []
+    assert result["mode"] == "direct_llm"
+    assert result["extra_query"] == []
 
 
 async def test_router_returns_mongo_db_retrieve():
@@ -156,45 +153,45 @@ async def test_router_returns_mongo_db_retrieve():
     mock_response.target_files = ["resume.pdf"]
     mock_response.extra_query = None
 
-    with patch("app.graph.nodes.router_query_node.llm") as mock_llm:
-        mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-            return_value=mock_response
-        )
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("app.graph.nodes.router_query_node.get_google_llm", return_value=mock_llm):
         state = make_state(query="Summarize my resume", uploaded_files=["resume.pdf"])
         result = await router_query_node(state)
 
-        assert result["mode"] == "mongo_db_retrieve"
+    assert result["mode"] == "mongo_db_retrieve"
 
 
 async def test_router_fallback_on_error():
-    with patch("app.graph.nodes.router_query_node.llm") as mock_llm:
-        mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-            side_effect=Exception("LLM error")
-        )
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
+        side_effect=Exception("LLM error")
+    )
+
+    with patch("app.graph.nodes.router_query_node.get_google_llm", return_value=mock_llm):
         state = make_state(query="What is this?")
         result = await router_query_node(state)
 
-        assert result["mode"] == "direct_llm_call"
-        assert result["extra_query"] == []
-        assert result["target_files"] is None
+    assert result["mode"] == "direct_llm_call"
+    assert result["extra_query"] == []
+    assert result["target_files"] is None
 
 
 async def test_title_generator_generates_title():
     mock_response = MagicMock()
     mock_response.title = "Python Resume Analysis"
 
-    with patch("app.graph.nodes.title_generator_node.llm") as mock_llm, \
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("app.graph.nodes.title_generator_node.get_google_llm", return_value=mock_llm), \
          patch("app.graph.nodes.title_generator_node.ChatSession") as mock_session:
-
-        mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-            return_value=mock_response
-        )
         mock_session.find_one.return_value.update = AsyncMock()
-
         state = make_state(query="Summarize my resume", message_index=0)
         result = await title_generator_node(state)
 
-        assert result["title"] == "Python Resume Analysis"
+    assert result["title"] == "Python Resume Analysis"
 
 
 async def test_title_generator_skips_if_not_first_message():
@@ -403,11 +400,13 @@ async def test_run_summarizer_skips_if_not_triggered():
         "summary": ""
     }
 
-    with patch(
-        "app.graph.nodes.memory_summarizer_node.llm"
-    ) as mock_llm:
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock()
+
+    with patch("app.graph.nodes.memory_summarizer_node.get_google_llm", return_value=mock_llm):
         await run_summarizer_background(state, config={})
-        mock_llm.ainvoke.assert_not_called()
+
+    mock_llm.ainvoke.assert_not_called()
 
 
 async def test_run_summarizer_generates_summary():
@@ -420,21 +419,18 @@ async def test_run_summarizer_generates_summary():
     mock_response = MagicMock()
     mock_response.content = "Summary of conversation."
 
-    with patch(
-        "app.graph.nodes.memory_summarizer_node.llm"
-    ) as mock_llm, patch(
-        "app.graph.nodes.memory_summarizer_node.graph"
-    ) as mock_graph:
-        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-        mock_graph.aupdate_state = AsyncMock()
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
+    with patch("app.graph.nodes.memory_summarizer_node.get_google_llm", return_value=mock_llm), \
+         patch("app.graph.nodes.memory_summarizer_node.graph") as mock_graph:
+        mock_graph.aupdate_state = AsyncMock()
         state = {"chat_history": history, "summary": ""}
         await run_summarizer_background(state, config={"configurable": {"thread_id": "test"}})
 
-        mock_llm.ainvoke.assert_called_once()
-        mock_graph.aupdate_state.assert_called_once()
-
-
+    mock_llm.ainvoke.assert_called_once()
+    mock_graph.aupdate_state.assert_called_once()
+    
 def test_should_generate_title_when_title_empty():
     state = make_state(title="")
     assert should_generate_title(state) == "title_generator"

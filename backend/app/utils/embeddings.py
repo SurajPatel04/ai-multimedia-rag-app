@@ -5,7 +5,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 load_dotenv()
 
 
-def get_openai_embeddings():
+def get_embeddings():
     return OpenAIEmbeddings(
         model="text-embedding-3-small",
         dimensions=1536,

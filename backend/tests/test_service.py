@@ -360,90 +360,79 @@ def _collect(gen) -> list[dict]:
 
 
 def test_stream_yields_text_events():
-    llm = _make_mock_llm([_make_chunk("Hello")])
-    events = _collect(stream_response("q", llm))
-
+    mock_llm = _make_mock_llm([_make_chunk("Hello")])
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        events = _collect(stream_response("q", mock_llm))
     text_events = [e for e in events if e["type"] == "text"]
     assert len(text_events) == 1
     assert text_events[0]["data"] == "Hello"
 
 
 def test_stream_yields_done_sentinel():
-    llm = _make_mock_llm([_make_chunk("Hi")])
-    raw = list(stream_response("q", llm))
-
+    mock_llm = _make_mock_llm([_make_chunk("Hi")])
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        raw = list(stream_response("q", mock_llm))
     assert any(line.strip() == "data: [DONE]" for line in raw)
 
 
 def test_stream_skips_empty_content_chunks():
-    llm = _make_mock_llm([
-        _make_chunk(""),
-        _make_chunk("Hi"),
-    ])
-
-    events = _collect(stream_response("q", llm))
-
+    mock_llm = _make_mock_llm([_make_chunk(""), _make_chunk("Hi")])
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        events = _collect(stream_response("q", mock_llm))
     text_events = [e for e in events if e["type"] == "text"]
     assert len(text_events) == 1
     assert text_events[0]["data"] == "Hi"
 
 
 def test_stream_concatenates_multiple_chunks():
-    llm = _make_mock_llm([
+    mock_llm = _make_mock_llm([
         _make_chunk("Hello "),
         _make_chunk("World"),
         _make_chunk("", usage={"input_tokens": 5, "output_tokens": 3}),
     ])
-
-    events = _collect(stream_response("q", llm))
-
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        events = _collect(stream_response("q", mock_llm))
     usage = next(e for e in events if e["type"] == "usage")
     assert usage["full_response"] == "Hello World"
 
 
-
 def test_stream_yields_usage_event_with_correct_fields():
-    llm = _make_mock_llm([
+    mock_llm = _make_mock_llm([
         _make_chunk("text"),
         _make_chunk("", usage={"input_tokens": 10, "output_tokens": 20}),
     ])
-
-    events = _collect(stream_response("q", llm))
-
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        events = _collect(stream_response("q", mock_llm))
     usage = next(e for e in events if e["type"] == "usage")
     assert usage["prompt_tokens"]     == 10
     assert usage["completion_tokens"] == 20
     assert usage["total_tokens"]      == 30
     assert "total_cost" in usage
 
-
 def test_stream_total_cost_is_positive():
-    llm = _make_mock_llm([
+    mock_llm = _make_mock_llm([
         _make_chunk("response"),
         _make_chunk("", usage={"input_tokens": 100, "output_tokens": 200}),
     ])
-
-    events = _collect(stream_response("q", llm))
-
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        events = _collect(stream_response("q", mock_llm))
     usage = next(e for e in events if e["type"] == "usage")
     assert usage["total_cost"] > 0
 
 
 def test_stream_no_usage_chunk_still_completes():
-    llm = _make_mock_llm([_make_chunk("Hi")])
-
-    raw = list(stream_response("q", llm))
-
+    mock_llm = _make_mock_llm([_make_chunk("Hi")])
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        raw = list(stream_response("q", mock_llm))
     assert any("data: [DONE]" in line for line in raw)
 
-
 def test_stream_event_order():
-    llm = _make_mock_llm([
+    mock_llm = _make_mock_llm([
         _make_chunk("Hello"),
         _make_chunk("", usage={"input_tokens": 1, "output_tokens": 1}),
     ])
-
-    raw = list(stream_response("q", llm))
+    with patch("app.services.llm_response_stream.get_google_llm", return_value=mock_llm):
+        raw = list(stream_response("q", mock_llm))
     types = []
     for line in raw:
         if line.startswith("data: [DONE]"):
@@ -453,6 +442,5 @@ def test_stream_event_order():
                 types.append(json.loads(line[6:])["type"])
             except Exception:
                 pass
-
     assert types.index("text")  < types.index("usage")
     assert types.index("usage") < types.index("done")

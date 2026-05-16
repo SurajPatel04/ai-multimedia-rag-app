@@ -267,20 +267,10 @@ async def test_query_new_session(authenticated_client):
     mock_llm = MagicMock()
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
-    with patch(
-        "app.router.chat.graph.ainvoke",
-        new=AsyncMock(return_value=MOCK_GRAPH_RESULT)
-    ), patch(
-        "app.router.chat.google_llm",
-        mock_llm
-    ), patch(
-        "app.router.chat.graph.aupdate_state",
-        new=AsyncMock()
-    ):
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "What is this about?"}
-        )
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "What is this about?"})
         assert res.status_code == 200
         session_id = res.headers.get("session-id")
         assert session_id is not None
@@ -291,30 +281,18 @@ async def test_query_existing_session(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
     session_id = "test_existing_session_001"
     await cleanup_session(session_id)
-
     await ChatSession(session_id=session_id, user_id=user.id, title="Existing").insert()
 
     mock_llm = MagicMock()
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
-    with patch(
-        "app.router.chat.graph.ainvoke",
-        new=AsyncMock(return_value={**MOCK_GRAPH_RESULT, "title": "Existing"})
-    ), patch(
-        "app.router.chat.google_llm",
-        mock_llm
-    ), patch(
-        "app.router.chat.graph.aupdate_state",
-        new=AsyncMock()
-    ):
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "Tell me more", "session_id": session_id}
-        )
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value={**MOCK_GRAPH_RESULT, "title": "Existing"})), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Tell me more", "session_id": session_id})
         assert res.status_code == 200
 
     await cleanup_session(session_id)
-
 
 async def test_query_unauthenticated(client):
     res = await client.post("/api/v1/chat/query", json={"query": "Hello"})
@@ -331,13 +309,9 @@ async def test_query_response_has_session_id_header(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.google_llm", mock_llm), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
-
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "Any question"}
-        )
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Any question"})
 
     assert "session-id" in res.headers
     await cleanup_session(res.headers["session-id"])
@@ -348,18 +322,13 @@ async def test_query_creates_chat_session_in_db(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.google_llm", mock_llm), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
-
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "Create a session for me"}
-        )
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Create a session for me"})
 
     session_id = res.headers.get("session-id")
     session = await ChatSession.find_one({"session_id": session_id})
     assert session is not None
-
     await cleanup_session(session_id)
 
 
@@ -372,49 +341,36 @@ async def test_query_temp_id_not_found(authenticated_client):
     assert "No uploaded files found" in res.text
 
 
-async def test_query_with_valid_temp_id_migration(authenticated_client, registered_user):  
+async def test_query_with_valid_temp_id_migration(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
     temp_id = "test_migrate_temp_001"
-    
-    mock_chunks = [{
-        "text": "Test chunk", 
-        "chunk_index": 0, 
-        "metadata": {"page": 1}
-    }]
-    
+
+    mock_chunks = [{"text": "Test chunk", "chunk_index": 0, "metadata": {"page": 1}}]
+
     await TempData(
-        temp_id=temp_id,
-        file_id=f"file_{uuid.uuid4().hex}",
-        user_id=str(user.id),
-        file_name="test_doc.pdf",
-        file_url="http://example.com/test_doc.pdf",
-        file_type="pdf",
-        content_type="application/pdf",
-        full_text="Test content",
-        chunks=mock_chunks,
-        embedded=False
+        temp_id=temp_id, file_id=f"file_{uuid.uuid4().hex}",
+        user_id=str(user.id), file_name="test_doc.pdf",
+        file_url="http://example.com/test_doc.pdf", file_type="pdf",
+        content_type="application/pdf", full_text="Test content",
+        chunks=mock_chunks, embedded=False
     ).insert()
 
     mock_llm = MagicMock()
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.google_llm", mock_llm), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
          patch("app.router.chat.embed_and_store") as mock_embed:
 
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "Analyze my document", "temp_id": temp_id}
-        )
-        
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Analyze my document", "temp_id": temp_id})
         assert res.status_code == 200
         session_id = res.headers.get("session-id")
         doc = await SessionDocument.find_one({"session_id": session_id})
         assert doc is not None
         assert doc.file_name == "test_doc.pdf"
-
         await cleanup_session(session_id)
+
 
 async def test_query_internal_server_error(authenticated_client):
     with patch("app.router.chat.graph.ainvoke", side_effect=Exception("Critical graph failure!")):
@@ -426,12 +382,10 @@ async def test_query_internal_server_error(authenticated_client):
         assert "Critical graph failure" in res.text
 
 
-async def test_query_with_complex_chunks_and_media_refs(authenticated_client):    
+async def test_query_with_complex_chunks_and_media_refs(authenticated_client):
     graph_result_media = {
-        "title": "Media Chat",
-        "message_index": 0,
-        "chat_history": [],
-        "messages": [],
+        "title": "Media Chat", "message_index": 0,
+        "chat_history": [], "messages": [],
         "media_refs": [{
             "document_id": str(PydanticObjectId()),
             "file_name": "demo_video.mp4",
@@ -441,28 +395,21 @@ async def test_query_with_complex_chunks_and_media_refs(authenticated_client):
     }
 
     class ComplexChunk:
-        content = [
-            {"type": "text", "text": "Multi "}, 
-            {"type": "text", "text": "part response"}
-        ]
+        content = [{"type": "text", "text": "Multi "}, {"type": "text", "text": "part response"}]
         usage_metadata = {"input_tokens": 100, "output_tokens": 50}
 
     mock_llm = MagicMock()
     mock_llm.astream = lambda msgs: _async_iter([ComplexChunk()])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_media)), \
-         patch("app.router.chat.google_llm", mock_llm), \
+         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
-
-        res = await authenticated_client.post(
-            "/api/v1/chat/query",
-            json={"query": "Show me the video"}
-        )
-
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Show me the video"})
         assert res.status_code == 200
         assert "demo_video.mp4" in res.text
         assert "Multi " in res.text
         assert "part response" in res.text
+        
 async def test_get_session_history_with_file_references(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
     session_id = "test_history_files_001"
