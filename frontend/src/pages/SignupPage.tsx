@@ -43,7 +43,7 @@ export default function SignupPage() {
       <div className="absolute top-8 left-8 md:left-12">
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <img src={ragIcon} alt="Logo" className="h-8 w-8 object-contain" />
-          <span className="text-xl font-bold tracking-tight text-white">AI Chat</span>
+          <span className="text-xl font-bold tracking-tight text-white">InsightFlow</span>
         </Link>
       </div>
       <div className="w-full max-w-md">
@@ -53,7 +53,7 @@ export default function SignupPage() {
           mode="signup"
           onSubmit={handleSubmit}
         />
-        <p className="mt-5 text-center text-sm text-neutral-300">
+        <p className="mt-3 text-center text-sm text-neutral-300">
           Already have an account?{" "}
           <button
             className="font-medium text-white underline bg-transparent border-none cursor-pointer p-0"

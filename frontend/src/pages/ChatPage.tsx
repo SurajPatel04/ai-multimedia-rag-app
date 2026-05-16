@@ -70,7 +70,7 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
     if (!mediaElement) {
       const allPlayers = Array.from(document.querySelectorAll("video, audio")) as HTMLMediaElement[];
       // Filter players that are physically above the button in the DOM
-      const previousPlayers = allPlayers.filter(p => 
+      const previousPlayers = allPlayers.filter(p =>
         p.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       );
       if (previousPlayers.length > 0) {
@@ -111,7 +111,7 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
 const renderTextWithEnhancements = (text: string) => {
   // 1. Matches timestamps: [00:00 - 00:00]
   const timestampRegex = /\[(?:.*?\|\s*)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*\]/g;
-  
+
   // 2. Matches filenames: file_name.ext (common extensions)
   const fileRegex = /\b([\w-]+\.(?:pdf|mp4|mp3|wav|mov|avi|doc|docx|txt))\b/gi;
 
@@ -433,6 +433,7 @@ export default function ChatPage() {
 
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isScrolledUpRef = useRef(false);
   const lastLoadedSessionIdRef = useRef<string | null>(null);
 
   const [menuOpenSessionId, setMenuOpenSessionId] = useState<string | null>(null);
@@ -558,11 +559,14 @@ export default function ChatPage() {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
       // Only show button if content is actually scrollable and we are far from bottom
       const canScroll = scrollHeight > clientHeight + 10;
-      setShowScrollToBottom(canScroll && (scrollHeight - scrollTop - clientHeight > 100));
+      const isScrolledUp = canScroll && (scrollHeight - scrollTop - clientHeight > 100);
+      isScrolledUpRef.current = isScrolledUp;
+      setShowScrollToBottom(isScrolledUp);
     }
   };
 
   const scrollToBottom = () => {
+    isScrolledUpRef.current = false;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -627,7 +631,7 @@ export default function ChatPage() {
 
   // Auto-scroll logic for streaming and session load
   useEffect(() => {
-    if (isSending) {
+    if (isSending && !isScrolledUpRef.current) {
       // Use "auto" for streaming to keep it snappy and locked to bottom
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     }
@@ -635,7 +639,7 @@ export default function ChatPage() {
 
   // Handle auto-scroll on content updates (streaming text)
   useEffect(() => {
-    if (isSending && activeMessages.length > 0) {
+    if (isSending && activeMessages.length > 0 && !isScrolledUpRef.current) {
       const lastMessage = activeMessages[activeMessages.length - 1];
       if (lastMessage.role === "ai") {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -646,6 +650,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!isLoadingMessages && activeMessages.length > 0) {
       // Smooth scroll only on initial load or navigation
+      isScrolledUpRef.current = false;
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [isLoadingMessages]);
@@ -869,14 +874,6 @@ export default function ChatPage() {
     [tempId, attachedFiles]
   );
 
-  const handleRemoveFiles = useCallback(() => {
-    if (uploadAbortControllerRef.current) {
-      uploadAbortControllerRef.current.abort();
-    }
-    setAttachedFiles([]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
-
   // Remove a single file
   const handleRemoveSingleFile = useCallback(async (index: number) => {
     const fileToRemove = attachedFiles[index];
@@ -952,6 +949,7 @@ export default function ChatPage() {
       setActiveMessages((prev) => [...prev, aiPlaceholder]);
 
       setTimeout(() => {
+        isScrolledUpRef.current = false;
         scrollToBottom();
       }, 50);
 
@@ -1122,7 +1120,7 @@ export default function ChatPage() {
     if (type.startsWith("audio/")) return { icon: <IconMusic className="h-4 w-4" />, color: "bg-neutral-800", label: "Audio" };
     if (type.startsWith("video/")) return { icon: <IconVideo className="h-4 w-4" />, color: "bg-neutral-800", label: "Video" };
     if (type === "application/pdf") return { icon: <IconFileText className="h-4 w-4" />, color: "bg-neutral-800", label: "PDF" };
-    if (type.includes("spreadsheet") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) 
+    if (type.includes("spreadsheet") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv"))
       return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "Spreadsheet" };
     return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "File" };
   };
@@ -1148,14 +1146,14 @@ export default function ChatPage() {
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className={`group/sidebar-toggle relative z-20 flex h-16 items-center gap-2 py-1 ${open ? "justify-start" : "justify-center"}`}>
               <Link
-                aria-label="AI Chat"
+                aria-label="InsightFlow"
                 className="flex h-12 shrink-0 items-center justify-start rounded-lg bg-transparent outline-none focus:outline-none -ml-1"
                 to="/chat"
               >
                 <img src={ragIcon} alt="RAG Icon" className="h-10 w-10 object-contain" />
               </Link>
               {open ? (
-                <span className="text-sm font-semibold text-white">AI Chat</span>
+                <span className="text-sm font-semibold text-white">InsightFlow</span>
               ) : null}
               <button
                 aria-label={open ? "Collapse sidebar" : "Open sidebar"}
@@ -1385,7 +1383,7 @@ export default function ChatPage() {
                   >
                     <div className={`flex flex-col gap-2 ${message.role === "human" ? "max-w-[80%] items-end" : "w-full"}`}>
                       {/* File references */}
-                       {message.role === "human" && message.file_references.length > 0 && (
+                      {message.role === "human" && message.file_references.length > 0 && (
                         <div className={`flex flex-col gap-2 ${message.role === "human" ? "items-end" : "items-start"}`}>
                           {Array.from(new Map(message.file_references.map(ref => [ref.file_name, ref])).values()).map((ref, idx) => {
                             const fileName = ref.file_name.toLowerCase().trim();
@@ -1402,7 +1400,7 @@ export default function ChatPage() {
                               const rescued = activeMessages
                                 .flatMap(m => m.file_references)
                                 .find(r => r.file_name === ref.file_name && r.file_url)?.file_url;
-                              
+
                               if (rescued) {
                                 mediaUrl = rescued.startsWith("http") || rescued.startsWith("blob:")
                                   ? rescued
@@ -1571,7 +1569,7 @@ export default function ChatPage() {
                 attachedFiles.length > 0 && (
                   <div className="mb-2 flex w-full items-center gap-3 overflow-x-auto scrollbar-hide pb-1">
                     {attachedFiles.map((af, idx) => {
-                      const { icon, color, label } = getFileInfo(af.file);
+                      const { icon, label } = getFileInfo(af.file);
                       return (
                         <div
                           key={`${af.file.name}-${idx}`}

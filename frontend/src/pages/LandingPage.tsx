@@ -10,7 +10,7 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <img src={ragIcon} alt="Logo" className="h-8 w-8 object-contain" />
-            <span className="text-xl font-bold tracking-tight">AI Chat</span>
+            <span className="text-xl font-bold tracking-tight">InsightFlow</span>
           </div>
           <div className="flex items-center gap-6">
             <Link to="/signup" className="rounded-full bg-white px-6 py-2.5 text-sm font-bold text-black hover:bg-neutral-200 transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]">Get Started</Link>
@@ -178,7 +178,7 @@ export default function LandingPage() {
           >
             <div className="flex items-center gap-3">
               <img src={ragIcon} alt="Logo" className="h-8 w-8 opacity-40 grayscale" />
-              <p className="font-medium">© 2026 AI Chat Platform.</p>
+              <p className="font-medium">© 2026 InsightFlow Platform.</p>
             </div>
 
             <div className="h-4 w-px bg-neutral-800 hidden md:block" />

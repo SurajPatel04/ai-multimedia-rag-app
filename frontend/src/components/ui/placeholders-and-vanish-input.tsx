@@ -85,7 +85,6 @@ export function PlaceholdersAndVanishInput({
     ctx.fillStyle = "#FFF";
     ctx.textBaseline = "top";
 
-    const words = value.split(" ");
     let line = "";
     let y = paddingTop * 2;
     const x = paddingLeft * 2;

@@ -189,6 +189,7 @@ export const SidebarLink = ({
 }: {
   link: Links;
   className?: string;
+  onClick?: () => void;
 }) => {
   const { open, animate } = useSidebar();
   return (

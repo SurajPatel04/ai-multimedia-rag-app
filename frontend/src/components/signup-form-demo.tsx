@@ -21,7 +21,7 @@ type SignupFormDemoProps = {
 export default function SignupFormDemo({
   mode,
   isLoading = false,
-  error,
+  error: _error,
   onSubmit,
 }: SignupFormDemoProps) {
   const isSignup = mode === "signup";
@@ -39,7 +39,7 @@ export default function SignupFormDemo({
   };
 
   return (
-    <div className="shadow-input mx-auto w-full max-w-md rounded-lg bg-white p-5 md:p-8 dark:bg-black">
+    <div className="shadow-input mx-auto w-full max-w-md rounded-lg bg-white p-5 pb-4 md:p-8 md:pb-4 dark:bg-black">
       <h2 className="text-xl font-bold text-neutral-800 dark:text-neutral-200">
         {isSignup ? "Create your account" : "Welcome back"}
       </h2>
@@ -49,7 +49,7 @@ export default function SignupFormDemo({
           : "Sign in with your email and password."}
       </p>
 
-      <form className="my-8" onSubmit={handleSubmit}>
+      <form className="mt-8 mb-0" onSubmit={handleSubmit}>
         {isSignup ? (
           <div className="mb-4 flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
             <LabelInputContainer>
