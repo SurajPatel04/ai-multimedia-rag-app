@@ -64,21 +64,13 @@ async def test_get_session_history_unauthenticated(client):
 
 async def test_get_session_history_success(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
-
     session_id = "test_session_history_001"
-    session = ChatSession(
-        session_id=session_id,
-        user_id=user.id,
-        title="Test Session"
-    )
+    session = ChatSession(session_id=session_id, user_id=user.id, title="Test Session")
     await session.insert()
 
     await ChatMessage(
-        session_id=session_id,
-        user_id=user.id,
-        role="human",
-        content="Hello",
-        message_index=0,
+        session_id=session_id, user_id=user.id,
+        role="human", content="Hello", message_index=0,
     ).insert()
 
     res = await authenticated_client.get(f"/api/v1/chat/session/{session_id}")
@@ -114,13 +106,8 @@ async def test_get_session_history_returns_multiple_messages(authenticated_clien
 
 async def test_update_session_title_success(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
-
     session_id = "test_session_update_001"
-    await ChatSession(
-        session_id=session_id,
-        user_id=user.id,
-        title="Old Title"
-    ).insert()
+    await ChatSession(session_id=session_id, user_id=user.id, title="Old Title").insert()
 
     res = await authenticated_client.patch(
         f"/api/v1/chat/session/{session_id}",
@@ -142,13 +129,8 @@ async def test_update_session_title_not_found(authenticated_client):
 
 async def test_update_session_title_empty(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
-
     session_id = "test_session_empty_title_001"
-    await ChatSession(
-        session_id=session_id,
-        user_id=user.id,
-        title="Old Title"
-    ).insert()
+    await ChatSession(session_id=session_id, user_id=user.id, title="Old Title").insert()
 
     res = await authenticated_client.patch(
         f"/api/v1/chat/session/{session_id}",
@@ -160,10 +142,7 @@ async def test_update_session_title_empty(authenticated_client, registered_user)
 
 
 async def test_update_session_title_unauthenticated(client):
-    res = await client.patch(
-        "/api/v1/chat/session/some_id",
-        json={"title": "New Title"}
-    )
+    res = await client.patch("/api/v1/chat/session/some_id", json={"title": "New Title"})
     assert res.status_code == 401
 
 
@@ -218,7 +197,6 @@ async def test_delete_session_hides_from_sessions_list(authenticated_client, reg
     await cleanup_session(session_id)
 
     await ChatSession(session_id=session_id, user_id=user.id, title="Hidden").insert()
-
     await authenticated_client.delete(f"/api/v1/chat/session/{session_id}")
 
     res = await authenticated_client.get("/api/v1/chat/sessions?page=1&limit=100")
@@ -245,7 +223,6 @@ async def test_delete_session_already_deleted(authenticated_client, registered_u
 
 
 async def test_delete_session_does_not_affect_other_sessions(authenticated_client, registered_user):
-
     user = await User.find_one({"email": registered_user["email"]})
     session_a = "test_session_del_a"
     session_b = "test_session_del_b"
@@ -262,6 +239,7 @@ async def test_delete_session_does_not_affect_other_sessions(authenticated_clien
 
     await cleanup_session(session_a)
     await cleanup_session(session_b)
+
 
 async def test_query_new_session(authenticated_client):
     mock_llm = MagicMock()
@@ -289,10 +267,14 @@ async def test_query_existing_session(authenticated_client, registered_user):
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value={**MOCK_GRAPH_RESULT, "title": "Existing"})), \
          patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
-        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Tell me more", "session_id": session_id})
+        res = await authenticated_client.post(
+            "/api/v1/chat/query",
+            json={"query": "Tell me more", "session_id": session_id}
+        )
         assert res.status_code == 200
 
     await cleanup_session(session_id)
+
 
 async def test_query_unauthenticated(client):
     res = await client.post("/api/v1/chat/query", json={"query": "Hello"})
@@ -333,10 +315,11 @@ async def test_query_creates_chat_session_in_db(authenticated_client):
 
 
 async def test_query_temp_id_not_found(authenticated_client):
-    res = await authenticated_client.post(
-        "/api/v1/chat/query",
-        json={"query": "Hello", "temp_id": "fake_temp_id"}
-    )
+    with patch("app.router.chat.get_google_llm", return_value=MagicMock()):
+        res = await authenticated_client.post(
+            "/api/v1/chat/query",
+            json={"query": "Hello", "temp_id": "fake_temp_id"}
+        )
     assert res.status_code == 404
     assert "No uploaded files found" in res.text
 
@@ -361,9 +344,11 @@ async def test_query_with_valid_temp_id_migration(authenticated_client, register
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
          patch("app.router.chat.get_google_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
-         patch("app.router.chat.embed_and_store") as mock_embed:
-
-        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Analyze my document", "temp_id": temp_id})
+         patch("app.router.chat.embed_and_store"):
+        res = await authenticated_client.post(
+            "/api/v1/chat/query",
+            json={"query": "Analyze my document", "temp_id": temp_id}
+        )
         assert res.status_code == 200
         session_id = res.headers.get("session-id")
         doc = await SessionDocument.find_one({"session_id": session_id})
@@ -373,13 +358,14 @@ async def test_query_with_valid_temp_id_migration(authenticated_client, register
 
 
 async def test_query_internal_server_error(authenticated_client):
-    with patch("app.router.chat.graph.ainvoke", side_effect=Exception("Critical graph failure!")):
+    with patch("app.router.chat.get_google_llm", return_value=MagicMock()), \
+         patch("app.router.chat.graph.ainvoke", side_effect=Exception("Critical graph failure!")):
         res = await authenticated_client.post(
             "/api/v1/chat/query",
             json={"query": "Hello"}
         )
-        assert res.status_code == 500
-        assert "Critical graph failure" in res.text
+    assert res.status_code == 500
+    assert "Critical graph failure" in res.text
 
 
 async def test_query_with_complex_chunks_and_media_refs(authenticated_client):
@@ -409,7 +395,8 @@ async def test_query_with_complex_chunks_and_media_refs(authenticated_client):
         assert "demo_video.mp4" in res.text
         assert "Multi " in res.text
         assert "part response" in res.text
-        
+
+
 async def test_get_session_history_with_file_references(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
     session_id = "test_history_files_001"
@@ -418,11 +405,8 @@ async def test_get_session_history_with_file_references(authenticated_client, re
     await ChatSession(session_id=session_id, user_id=user.id, title="Files Chat").insert()
 
     await ChatMessage(
-        session_id=session_id,
-        user_id=user.id,
-        role="ai",
-        content="Here is the document.",
-        message_index=0,
+        session_id=session_id, user_id=user.id,
+        role="ai", content="Here is the document.", message_index=0,
         file_references=[
             FileReference(
                 document_id=PydanticObjectId(),
@@ -436,7 +420,6 @@ async def test_get_session_history_with_file_references(authenticated_client, re
 
     with patch("app.router.chat.get_fresh_signed_url", return_value="http://signed-url.com/report.pdf"):
         res = await authenticated_client.get(f"/api/v1/chat/session/{session_id}")
-        
         assert res.status_code == 200
         msg_data = res.json()["data"]["messages"][0]
         assert len(msg_data["file_references"]) == 1
@@ -446,7 +429,7 @@ async def test_get_session_history_with_file_references(authenticated_client, re
     await cleanup_session(session_id)
 
 
-async def test_get_sessions_empty_list(authenticated_client, registered_user):  
+async def test_get_sessions_empty_list(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
     await ChatSession.find({"user_id": user.id}).delete()
 
