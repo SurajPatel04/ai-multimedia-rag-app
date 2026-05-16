@@ -28,6 +28,7 @@ jobs:
 
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     defaults:
       run:
         working-directory: ./backend
