@@ -3,8 +3,7 @@ from dotenv import load_dotenv
 import json
 import os
 
-load_dotenv()
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+load_dotenv()   
 
 llm = init_chat_model("openai:gpt-4o-mini", temperature=0, stream_usage=True)
 google_llm_lite = init_chat_model(
