@@ -16,7 +16,7 @@ from app.models.chat_message import ChatMessage
 from app.schemas.chat import ChatRequest, UpdateSessionTitleRequest
 from app.helpers.vector_db import vector_search
 from app.services.file_processor import embed_and_store
-from app.utils.llm import INPUT_COST, OUTPUT_COST, get_google_llm
+from app.utils.llm import INPUT_COST, OUTPUT_COST, get_google_llm, get_openai_llm
 from app.helpers.summarizer import generate_session_summary
 from app.graph.workflow import graph
 from app.graph.nodes.memory_summarizer_node import run_summarizer_background
@@ -104,7 +104,7 @@ async def migrate_temp_to_session(
 
 @router.post("/query")
 async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
-    google_llm = get_google_llm()
+    llm = get_openai_llm()
     try:
         is_new_session = not payload.session_id
         session_id = (
@@ -151,7 +151,7 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
                 generate_session_summary(
                     session_id = session_id,
                     docs       = session_docs,
-                    llm        = google_llm
+                    llm        = llm
                 )
             )
 
@@ -206,7 +206,7 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
                     'media_refs': media_refs,
                 })}\n\n"
 
-            async for chunk in google_llm.astream(result.get("messages", [])):
+            async for chunk in llm.astream(result.get("messages", [])):
 
                 content = ""
 

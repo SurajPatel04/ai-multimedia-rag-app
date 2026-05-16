@@ -7,6 +7,7 @@ from app.models.temp_data import TempData
 from app.models.chat_message import FileReference
 from app.models.session_document import SessionDocument
 from app.models.user import User
+from langchain_core.messages import HumanMessage
 import uuid
 
 
@@ -20,7 +21,7 @@ MOCK_GRAPH_RESULT = {
     "title": "Test Chat",
     "message_index": 0,
     "chat_history": [],
-    "messages": [],
+    "messages": [HumanMessage(content="What is this about?")],
     "media_refs": None,
 }
 
@@ -246,7 +247,7 @@ async def test_query_new_session(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
         res = await authenticated_client.post("/api/v1/chat/query", json={"query": "What is this about?"})
         assert res.status_code == 200
@@ -265,7 +266,7 @@ async def test_query_existing_session(authenticated_client, registered_user):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value={**MOCK_GRAPH_RESULT, "title": "Existing"})), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
         res = await authenticated_client.post(
             "/api/v1/chat/query",
@@ -291,7 +292,7 @@ async def test_query_response_has_session_id_header(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
         res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Any question"})
 
@@ -304,7 +305,7 @@ async def test_query_creates_chat_session_in_db(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
         res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Create a session for me"})
 
@@ -342,7 +343,7 @@ async def test_query_with_valid_temp_id_migration(authenticated_client, register
     mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
          patch("app.router.chat.embed_and_store"):
         res = await authenticated_client.post(
@@ -388,7 +389,7 @@ async def test_query_with_complex_chunks_and_media_refs(authenticated_client):
     mock_llm.astream = lambda msgs: _async_iter([ComplexChunk()])
 
     with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_media)), \
-         patch("app.router.chat.get_google_llm", return_value=mock_llm), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
          patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
         res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Show me the video"})
         assert res.status_code == 200

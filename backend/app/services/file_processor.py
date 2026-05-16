@@ -3,11 +3,11 @@ import uuid
 from app.helpers.pdf_reader import process_pdf
 from app.helpers.whisper_transcriber import transcribe_audio
 from app.helpers.vector_db import store_vectors, delete_session_vectors
-from app.utils.embeddings import get_google_embeddings
+from app.utils.embeddings import get_embeddings
 from app.utils.video_to_audio_converter import VIDEO_EXTENSIONS, convert_video_to_audio
 from langchain_core.documents import Document as LangchainDocument
 
-embeddings = get_google_embeddings()
+embeddings = get_embeddings()
 
 AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "flac"}
 PDF_EXTENSIONS = {"pdf"}
