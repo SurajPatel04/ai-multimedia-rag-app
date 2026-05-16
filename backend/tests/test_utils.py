@@ -87,10 +87,16 @@ class TestLLMModels:
         assert get_openai_llm() is not None
 
     def test_get_google_llm_lite_returns_instance(self, mock_env):
-        assert get_google_llm_lite() is not None
+        with patch("app.utils.llm.init_chat_model", return_value=MagicMock()) as mock_init:
+            model = get_google_llm_lite()
+            assert model is not None
+            mock_init.assert_called_once()
 
     def test_get_google_llm_returns_instance(self, mock_env):
-        assert get_google_llm() is not None
+        with patch("app.utils.llm.init_chat_model", return_value=MagicMock()) as mock_init:
+            model = get_google_llm()
+            assert model is not None
+            mock_init.assert_called_once()
 
     def test_cost_constants_are_positive(self, mock_env):
         assert isinstance(INPUT_COST, float) and INPUT_COST > 0
@@ -112,14 +118,16 @@ class TestLLMModels:
     async def test_google_llm_invoke_returns_content(self, mock_env):
         fake_message = MagicMock()
         fake_message.content = "Gemini response"
-        model = get_google_llm()
-        with patch.object(type(model), "ainvoke", new_callable=lambda: lambda *a, **kw: AsyncMock(return_value=fake_message)()):
+
+        with patch("app.utils.llm.init_chat_model", return_value=MagicMock()):
+            model = get_google_llm()
+            model.ainvoke = AsyncMock(return_value=fake_message)
             result = await model.ainvoke([{"role": "user", "content": "Say hi"}])
+
         assert result.content == "Gemini response"
 
 
 class TestSupabase:
-
     @pytest.mark.asyncio
     async def test_get_async_supabase_creates_client(self, mock_env):
         module._async_supabase = None
