@@ -381,7 +381,6 @@ async def test_upload_disconnected_before_upload_task(authenticated_client):
             new_callable=AsyncMock,
             return_value=True,
         ),
-        patch("os.path.exists", return_value=False),
     ):
         res = await authenticated_client.post(
             "/api/v1/upload",
@@ -405,7 +404,6 @@ async def test_upload_disconnected_during_upload_task(authenticated_client):
         patch("asyncio.create_task", return_value=slow_task),
         patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-during"),
         patch("app.router.file_upload.TempData"),
-        patch("os.path.exists", return_value=False),
         patch("starlette.requests.Request.is_disconnected", side_effect=third_true),
     ):
         res = await authenticated_client.post(
@@ -437,7 +435,6 @@ async def test_upload_disconnected_before_processing():
             new_callable=AsyncMock,
             return_value={"file_path": "docs/f.pdf", "signed_url": "https://x"},
         ),
-        patch("os.path.exists", return_value=False),
     ):
         result = await process_and_upload(
             "tid-before-proc", saved, mock_file, "fake-user-id", mock_request
@@ -462,7 +459,6 @@ async def test_upload_disconnected_during_processing(authenticated_client):
         patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
         patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-during-proc"),
         patch("app.router.file_upload.TempData"),
-        patch("os.path.exists", return_value=False),
         patch("starlette.requests.Request.is_disconnected", side_effect=fourth_true),
     ):
         res = await authenticated_client.post(
@@ -490,7 +486,6 @@ async def test_upload_disconnected_before_db_insert(authenticated_client):
         patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
         patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-before-db"),
         patch("app.router.file_upload.TempData"),
-        patch("os.path.exists", return_value=False),
         patch("starlette.requests.Request.is_disconnected", side_effect=fifth_true),
     ):
         res = await authenticated_client.post(
