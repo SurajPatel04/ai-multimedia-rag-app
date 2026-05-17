@@ -27,6 +27,31 @@ const processQueue = (error: any) => {
   failedQueue = [];
 };
 
+export const refreshToken = async (): Promise<void> => {
+  if (isRefreshing) {
+    return new Promise(function (resolve, reject) {
+      failedQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+  try {
+    await api.post("/auth/refresh");
+    processQueue(null);
+  } catch (err) {
+    processQueue(err);
+    if (
+      !window.location.pathname.includes("/login") &&
+      !window.location.pathname.includes("/signup")
+    ) {
+      window.location.href = "/login";
+    }
+    return Promise.reject(err);
+  } finally {
+    isRefreshing = false;
+  }
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -36,34 +61,12 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        })
-          .then(() => {
-            return api(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
-          });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
-
       try {
-        await api.post("/auth/refresh");
-        processQueue(null);
+        await refreshToken();
         return api(originalRequest);
       } catch (err) {
-        processQueue(err);
-        // Only redirect if we're not already on an auth page to prevent infinite loops
-        if (!window.location.pathname.includes("/login") && !window.location.pathname.includes("/signup")) {
-          window.location.href = "/login";
-        }
         return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
       }
     }
 

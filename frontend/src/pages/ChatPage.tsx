@@ -108,17 +108,25 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
   activeTimeUpdateRef = { element: mediaElement, listener };
 };
 
-const renderTextWithEnhancements = (text: string) => {
-  // 1. Matches timestamps: [00:00 - 00:00]
-  const timestampRegex = /\[(?:.*?\|\s*)?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*\]/g;
+const renderTextWithEnhancements = (text: string, fileNames: string[] = []) => {
+  // 1. Matches timestamps: [00:00 - 00:00] or 00:00 - 00:00
+  const timestampRegex = /(?:\[(?:.*?\|\s*)?)?\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b(?:\])?/g;
 
-  // 2. Matches filenames: file_name.ext (common extensions)
-  const fileRegex = /\b([\w-]+\.(?:pdf|mp4|mp3|wav|mov|avi|doc|docx|txt))\b/gi;
+  // 2. Matches known filenames exactly, fallback to common regex
+  const escapedNames = fileNames
+    .map(name => name.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  const knownFilesRegex = escapedNames.length > 0 
+    ? new RegExp(`(?<=^|\\s|["'\\[\\(\\{])(${escapedNames.join("|")})(?=$|\\s|["'\\]\\)\\},:;.!?])`, 'gi')
+    : null;
+
+  const fallbackFileRegex = /\b([\w-]+\.(?:pdf|mp4|mp3|wav|mov|avi|doc|docx|txt))\b/gi;
 
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-
-  // We'll combine matches and sort them by index to process sequentially
   const matches: { index: number; length: number; content: React.ReactNode }[] = [];
 
   // Find Timestamps
@@ -152,10 +160,30 @@ const renderTextWithEnhancements = (text: string) => {
     });
   }
 
-  // Find Filenames
+  // Find Known Filenames
+  if (knownFilesRegex) {
+    let kMatch;
+    while ((kMatch = knownFilesRegex.exec(text)) !== null) {
+      if (matches.some(m => kMatch!.index >= m.index && kMatch!.index < m.index + m.length)) continue;
+
+      matches.push({
+        index: kMatch.index,
+        length: kMatch[0].length,
+        content: (
+          <span
+            key={`file-k-${kMatch.index}`}
+            className="mx-0.5 rounded-none bg-white/10 border border-white/30 px-1.5 py-0.5 font-mono text-[12px] font-bold text-white shadow-sm"
+          >
+            {kMatch[1]}
+          </span>
+        )
+      });
+    }
+  }
+
+  // Find Fallback Filenames
   let fMatch;
-  while ((fMatch = fileRegex.exec(text)) !== null) {
-    // Avoid overlapping with timestamps if a filename was inside a timestamp
+  while ((fMatch = fallbackFileRegex.exec(text)) !== null) {
     if (matches.some(m => fMatch!.index >= m.index && fMatch!.index < m.index + m.length)) continue;
 
     matches.push({
@@ -191,12 +219,12 @@ const renderTextWithEnhancements = (text: string) => {
   return parts.length === 0 ? text : parts;
 };
 
-const processMarkdownChildren = (children: React.ReactNode): React.ReactNode => {
+const processMarkdownChildren = (children: React.ReactNode, fileNames: string[] = []): React.ReactNode => {
   if (typeof children === "string") {
-    return renderTextWithEnhancements(children);
+    return renderTextWithEnhancements(children, fileNames);
   }
   if (Array.isArray(children)) {
-    return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child)}</Fragment>);
+    return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child, fileNames)}</Fragment>);
   }
   return children;
 };
@@ -428,6 +456,11 @@ export default function ChatPage() {
   // Active session state
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
+  const knownFileNames = Array.from(
+    new Set(
+      activeMessages.flatMap((m) => m.file_references.map((r) => r.file_name))
+    )
+  ).filter(Boolean);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -951,7 +984,7 @@ export default function ChatPage() {
       setTimeout(() => {
         isScrolledUpRef.current = false;
         scrollToBottom();
-      }, 50);
+      }, 350);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -1373,9 +1406,13 @@ export default function ChatPage() {
                 {activeMessages.map((message, index) => (
                   <motion.div
                     key={`${message.role}-${message.message_index || index}`}
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: message.role === "human" ? 0 : 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    transition={{
+                      duration: 0.2,
+                      delay: message.role === "human" ? 0.3 : 0,
+                      ease: "easeOut"
+                    }}
                     className={cn(
                       "chat-message-group",
                       message.role === "human" ? "group flex justify-end" : "group flex justify-start"
@@ -1451,6 +1488,7 @@ export default function ChatPage() {
                       )}
 
                       <div
+                        id={message.role === "human" ? `human-message-${message.message_index}` : undefined}
                         className={
                           message.role === "human"
                             ? "rounded-2xl rounded-tr-sm bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100"
@@ -1469,12 +1507,12 @@ export default function ChatPage() {
                             {/* Message content — ReactMarkdown */}
                             <ReactMarkdown
                               components={{
-                                p: ({ children }) => <p className="mb-3 last:mb-0 text-sm leading-relaxed text-neutral-300">{processMarkdownChildren(children)}</p>,
-                                ul: ({ children }) => <ul className="mb-3 last:mb-0 list-disc space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children)}</ul>,
-                                ol: ({ children }) => <ol className="mb-3 last:mb-0 list-decimal space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children)}</ol>,
-                                li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children)}</li>,
-                                strong: ({ children }) => <strong className="font-bold text-white">{processMarkdownChildren(children)}</strong>,
-                                em: ({ children }) => <em className="italic text-neutral-400">{processMarkdownChildren(children)}</em>,
+                                p: ({ children }) => <p className="mb-3 last:mb-0 text-sm leading-relaxed text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</p>,
+                                ul: ({ children }) => <ul className="mb-3 last:mb-0 list-disc space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</ul>,
+                                ol: ({ children }) => <ol className="mb-3 last:mb-0 list-decimal space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</ol>,
+                                li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children, knownFileNames)}</li>,
+                                strong: ({ children }) => <strong className="font-bold text-white">{processMarkdownChildren(children, knownFileNames)}</strong>,
+                                em: ({ children }) => <em className="italic text-neutral-400">{processMarkdownChildren(children, knownFileNames)}</em>,
                                 code: ({ className, children, ...props }) => {
                                   const match = /language-(\w+)/.exec(className || "");
                                   return match ? (
@@ -1565,6 +1603,7 @@ export default function ChatPage() {
               onStop={handleStopChat}
               isStreaming={isSending}
               placeholders={placeholders}
+              activeMessagesCount={activeMessages.length}
               topContent={
                 attachedFiles.length > 0 && (
                   <div className="mb-2 flex w-full items-center gap-3 overflow-x-auto scrollbar-hide pb-1">

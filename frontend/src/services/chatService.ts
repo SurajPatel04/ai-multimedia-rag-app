@@ -1,4 +1,4 @@
-import api from "./api";
+import api, { refreshToken } from "./api";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL ||
@@ -135,13 +135,24 @@ export const chatService = {
     if (params.session_id) body.session_id = params.session_id;
     if (params.temp_id) body.temp_id = params.temp_id;
 
-    const res = await fetch(`${API_BASE_URL}/chat/query`, {
+    let res = await fetch(`${API_BASE_URL}/chat/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(body),
       signal,
     });
+
+    if (res.status === 401) {
+      await refreshToken();
+      res = await fetch(`${API_BASE_URL}/chat/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+        signal,
+      });
+    }
 
     if (!res.ok) {
       const text = await res.text();
