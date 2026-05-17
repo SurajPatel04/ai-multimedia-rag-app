@@ -5,36 +5,30 @@ from app.graph.nodes.router_query_node import router_query_node
 from app.graph.nodes.vector_search_node import vector_search_node
 from app.graph.nodes.mongo_db_retrieve_node import mongo_db_retrieve_node
 from app.graph.nodes.context_builder_node import context_builder_node
+from app.graph.nodes.semantic_cache_check_node import semantic_cache_check_node
 from app.graph.checkpointer.mongo_checkpointer import get_checkpointer
 
 workflow = StateGraph(State)
 
 # Nodes
-
-workflow.add_node("title_generator",     title_generator_node)
-workflow.add_node("router_query",        router_query_node)
-workflow.add_node("vector_search",       vector_search_node)
-workflow.add_node("mongo_db_retrieve",   mongo_db_retrieve_node)
+workflow.add_node("title_generator",      title_generator_node)
+workflow.add_node("router_query",         router_query_node)
+workflow.add_node("semantic_cache_check", semantic_cache_check_node)
+workflow.add_node("vector_search",        vector_search_node)
+workflow.add_node("mongo_db_retrieve",    mongo_db_retrieve_node)
 workflow.add_node("context_builder_node", context_builder_node)
 
 
-# Title check condition
+# Conditions
 
 def should_generate_title(state: State):
-    if state.title == "":
-        return "title_generator"
-    return "router_query"
+    return "generate" if state.title == "" else "skip"
 
-# Router Logic
+def route_after_cache(state: State):
+    if state.cache_hit:
+        return "end"
+    return state.mode
 
-def route_query(state: State):
-    if state.mode == "vector_search":
-        return "vector_search"
-    if state.mode == "mongo_db_retrieve":
-        return "mongo_db_retrieve"
-    if state.mode == "direct_llm":
-        return "direct_llm"
-    return "direct_llm"
 
 # Edges
 
@@ -44,23 +38,26 @@ workflow.add_conditional_edges(
     "title_generator",
     should_generate_title,
     {
-        "title_generator": "router_query",
-        "router_query":    "router_query"
+        "generate": "router_query",
+        "skip":     "router_query"
     }
 )
+
+workflow.add_edge("router_query", "semantic_cache_check")
 
 workflow.add_conditional_edges(
-    "router_query",
-    route_query,
+    "semantic_cache_check",
+    route_after_cache,
     {
-        "vector_search":       "vector_search",
-        "mongo_db_retrieve":   "mongo_db_retrieve",
-        "direct_llm":          "context_builder_node"
+        "end":               END,
+        "vector_search":     "vector_search",
+        "mongo_db_retrieve": "mongo_db_retrieve",
+        "direct_llm":        "context_builder_node"
     }
 )
 
-workflow.add_edge("vector_search",       "context_builder_node")
-workflow.add_edge("mongo_db_retrieve",   "context_builder_node")
+workflow.add_edge("vector_search",        "context_builder_node")
+workflow.add_edge("mongo_db_retrieve",    "context_builder_node")
 workflow.add_edge("context_builder_node", END)
 
 graph = workflow.compile(checkpointer=get_checkpointer())

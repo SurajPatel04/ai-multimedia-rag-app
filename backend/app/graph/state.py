@@ -31,6 +31,7 @@ class State(BaseModel):
         default_factory=list
     )
     target_files: Optional[List[str]] = None
+    last_active_files: List[str] = Field(default_factory=list)
     message_index: int = 0
 
     media_refs: Optional[List[dict]] = None
@@ -44,6 +45,13 @@ class State(BaseModel):
     ] = None
 
     response: Optional[str] = None
+    
+
+    cache_hit:       bool          = False
+    cached_response: Optional[str] = None
+    skip_cache: bool = False
+
+    should_cache: bool = False
 
     class Config:
         arbitrary_types_allowed = True

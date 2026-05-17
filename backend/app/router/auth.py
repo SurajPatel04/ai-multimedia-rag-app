@@ -6,22 +6,23 @@ from app.schemas.auth import RegisterRequest, SignInRequest
 from app.core.security import hash, verifyPassword
 from app.services.auth_service import create_both_tokens
 from app.core.config import settings
-
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signUp", status_code=status.HTTP_201_CREATED)
-async def signUp(request: RegisterRequest):
-    existingUser = await User.find_one(User.email== request.email)
+@limiter.limit("10/minute")
+async def signUp(request: Request, body: RegisterRequest):
+    existingUser = await User.find_one(User.email== body.email)
     if existingUser:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
 
     try:
-        hashed_password = hash(request.password)
+        hashed_password = hash(body.password)
         user = User(
-            first_name=request.first_name,
-            last_name=request.last_name,
-            email=request.email,
+            first_name=body.first_name,
+            last_name=body.last_name,
+            email=body.email,
             password=hashed_password
         )
         await user.insert()
@@ -36,13 +37,14 @@ async def signUp(request: RegisterRequest):
 
 
 @router.post("/signIn", status_code=status.HTTP_200_OK)
-async def signIn(request: SignInRequest):
+@limiter.limit("10/minute")
+async def signIn(request: Request, body: SignInRequest):
     try:
-        user = await User.find_one(User.email== request.email)
+        user = await User.find_one(User.email== body.email)
         if not user:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email or password")
         
-        if not verifyPassword(request.password, user.password):
+        if not verifyPassword(body.password, user.password):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email or password")
         
         tokens = await create_both_tokens(user.id)

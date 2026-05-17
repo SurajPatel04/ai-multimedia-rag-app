@@ -62,8 +62,6 @@ def vector_search(user_id: str, session_id: str, query: str, embeddings, top_k: 
         store = load_vector_store(user_id, embeddings)
     except FileNotFoundError:
         return []
-
-    # Always filter by session
     search_filter = {"session_id": session_id}
 
     if target_files:

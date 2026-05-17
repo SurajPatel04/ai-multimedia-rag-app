@@ -9,7 +9,8 @@ from app.utils.file_upload_supabase import get_fresh_signed_url
 from app.utils.llm import get_openai_llm, get_google_llm_lite, get_google_llm, INPUT_COST, OUTPUT_COST
 from app.utils.video_to_audio_converter import convert_video_to_audio, VIDEO_EXTENSIONS
 import subprocess
-
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 @pytest.fixture
 def mock_env(monkeypatch):
@@ -51,14 +52,13 @@ class TestEmbeddings:
         assert get_embeddings() is not None
 
     def test_get_embeddings_returns_openai_type(self, mock_env):
-        from langchain_openai import OpenAIEmbeddings
         assert isinstance(get_embeddings(), OpenAIEmbeddings)
 
     def test_get_google_embeddings_returns_instance(self, mock_env):
         assert get_google_embeddings() is not None
 
     def test_get_google_embeddings_returns_google_type(self, mock_env):
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        
         assert isinstance(get_google_embeddings(), GoogleGenerativeAIEmbeddings)
 
     @pytest.mark.asyncio
@@ -79,6 +79,32 @@ class TestEmbeddings:
         ):
             result = await get_google_embeddings().aembed_query("test text")
         assert len(result) == 1536
+
+    @patch("app.utils.embeddings.asyncio.sleep")
+    def test_get_embeddings_retries_on_quota_error(self, mock_sleep, mock_env):
+        with patch("app.utils.embeddings.OpenAIEmbeddings", side_effect=[Exception("429 rate limit"), MagicMock()]) as mock_openai:
+            result = get_embeddings(max_retries=2, delay=1.0)
+        assert result is not None
+        assert mock_openai.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_get_embeddings_returns_none_on_non_quota_error(self, mock_env):
+        with patch("app.utils.embeddings.OpenAIEmbeddings", side_effect=Exception("Invalid API Key")):
+            result = get_embeddings(max_retries=2)
+        assert result is None
+
+    @patch("app.utils.embeddings.asyncio.sleep")
+    def test_get_google_embeddings_retries_on_quota_error(self, mock_sleep, mock_env):
+        with patch("app.utils.embeddings.GoogleGenerativeAIEmbeddings", side_effect=[Exception("429 resource_exhausted"), MagicMock()]) as mock_google:
+            result = get_google_embeddings(max_retries=2, delay=1.0)
+        assert result is not None
+        assert mock_google.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_get_google_embeddings_returns_none_on_non_quota_error(self, mock_env):
+        with patch("app.utils.embeddings.GoogleGenerativeAIEmbeddings", side_effect=Exception("Invalid API Key")):
+            result = get_google_embeddings(max_retries=2)
+        assert result is None
 
 
 class TestLLMModels:
@@ -246,3 +272,61 @@ class TestVideoConverter:
         assert "16000"  in called_cmd
         assert "-b:a"   in called_cmd
         assert "32k"    in called_cmd
+
+
+class TestRouterHistory:
+
+    def test_trim_by_tokens_short(self):
+        from app.utils.router_history import trim_by_tokens
+        text = "Hello world"
+        assert trim_by_tokens(text, max_tokens=10) == "Hello world"
+
+    def test_trim_by_tokens_long(self):
+        from app.utils.router_history import trim_by_tokens
+        text = "This is a very long text that needs trimming"
+        trimmed = trim_by_tokens(text, max_tokens=3)
+        assert trimmed.endswith("...")
+        assert len(trimmed) < len(text) + 3
+
+    def test_build_router_history_empty(self):
+        from app.utils.router_history import build_router_history
+        assert build_router_history([]) == ""
+
+    def test_build_router_history_basic(self):
+        from app.utils.router_history import build_router_history
+        from langchain_core.messages import HumanMessage, AIMessage
+        history = [
+            HumanMessage(content="Hi"),
+            AIMessage(content="Hello! How can I help?"),
+            HumanMessage(content="What is RAG?")
+        ]
+        res = build_router_history(history)
+        assert "User: Hi" in res
+        assert "Assistant: Hello! How can I help?" in res
+        assert "User: What is RAG?" in res
+
+    def test_build_router_history_ai_trimming(self):
+        from app.utils.router_history import build_router_history
+        from langchain_core.messages import HumanMessage, AIMessage
+        long_ai_text = "A" * 1000
+        history = [
+            HumanMessage(content="Explain"),
+            AIMessage(content=long_ai_text)
+        ]
+        res = build_router_history(history, ai_char_limit=10)
+        assert "Assistant: AAAAAAAAAA..." in res
+
+    def test_build_router_history_human_limit(self):
+        from app.utils.router_history import build_router_history
+        from langchain_core.messages import HumanMessage
+        history = [
+            HumanMessage(content="First"),
+            HumanMessage(content="Second"),
+            HumanMessage(content="Third"),
+            HumanMessage(content="Fourth")
+        ]
+        res = build_router_history(history, human_message_limit=2)
+        assert "User: Third" in res
+        assert "User: Fourth" in res
+        assert "User: First" not in res
+        assert "User: Second" not in res

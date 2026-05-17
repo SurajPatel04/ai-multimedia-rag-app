@@ -6,6 +6,8 @@ class QueryRouterState(BaseModel):
 
     target_files: Optional[List[str]] = None
 
+    should_cache: bool = False
+
     mode: Literal[
             "vector_search",
             "mongo_db_retrieve",

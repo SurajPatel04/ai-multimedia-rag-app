@@ -17,11 +17,13 @@ from app.schemas.chat import ChatRequest, UpdateSessionTitleRequest
 from app.helpers.vector_db import vector_search
 from app.services.file_processor import embed_and_store
 from app.utils.llm import INPUT_COST, OUTPUT_COST, get_google_llm, get_openai_llm
+from app.utils.embeddings import get_embeddings
 from app.helpers.summarizer import generate_session_summary
 from app.graph.workflow import graph
 from app.graph.nodes.memory_summarizer_node import run_summarizer_background
 from app.models.chat_message import FileReference 
 from app.utils.file_upload_supabase import get_fresh_signed_url
+from app.services.semantic_cache import get_semantic_cache, set_semantic_cache
 
 
 router = APIRouter(
@@ -29,6 +31,7 @@ router = APIRouter(
     tags=["chat"]
 )
 
+embedder = get_embeddings()
 
 def generate_session_id():
     return f"session_{uuid.uuid4().hex}"
@@ -113,20 +116,17 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
             else generate_session_id()
         )
 
-        user_id = user_id
-
         if is_new_session:
             await ChatSession(
                 session_id = session_id,
                 user_id    = user_id,
-                title      = "" 
+                title      = ""
             ).insert()
 
+        session_docs        = []
+        uploaded_file_names = []
+        file_references     = []
 
-        session_docs = []
-        uploaded_file_names = [] 
-        file_references = []
-        
         if payload.temp_id:
             session_docs = await migrate_temp_to_session(
                 temp_id    = payload.temp_id,
@@ -155,27 +155,25 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
                 )
             )
 
-        config = {
-            "configurable": {
-                "thread_id": session_id
-            }
-        }
+        config = {"configurable": {"thread_id": session_id}}
 
+        # ✅ Always invoke graph — cache check is inside graph now
         result = await graph.ainvoke(
             {
-                "query":      payload.query,
-                "session_id": session_id,
-                "user_id":    user_id,
-                "title":      await get_chat_title(session_id),
+                "query":          payload.query,
+                "session_id":     session_id,
+                "user_id":        user_id,
+                "title":          await get_chat_title(session_id),
                 "uploaded_files": uploaded_file_names,
-                "latest_files":    uploaded_file_names,
+                "latest_files":   uploaded_file_names,
+                "skip_cache":     bool(payload.temp_id), 
             },
             config=config
         )
 
-        title = result.get("title") or await get_chat_title(session_id)
-
+        title         = result.get("title") or await get_chat_title(session_id)
         current_index = result.get("message_index", 0)
+
         await ChatMessage(
             session_id      = session_id,
             user_id         = user_id,
@@ -199,50 +197,68 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
                 'title':      title,
             })}\n\n"
 
-            media_refs = result.get("media_refs")
-            if media_refs:
-                yield f"data: {json.dumps({
-                    'type':       'media',
-                    'media_refs': media_refs,
-                })}\n\n"
-
-            async for chunk in llm.astream(result.get("messages", [])):
-
-                content = ""
-
-                if isinstance(chunk.content, str):
-                    content = chunk.content
-
-                elif isinstance(chunk.content, list):
-                    for item in chunk.content:
-
-                        if isinstance(item, dict):
-                            if item.get("type") == "text":
-                                content += item.get("text", "")
-
-                        elif hasattr(item, "text"):
-                            content += item.text
-
-                if content:
-                    full_response += content
-
+            # ✅ Cache hit — stream cached response
+            if result.get("cache_hit"):
+                cached = result.get("cached_response", "")
+                words  = cached.split(" ")
+                for word in words:
+                    chunk_text     = word + " "
+                    full_response += chunk_text
                     yield f"data: {json.dumps({
-                        'type': 'text',
-                        'data': content
+                        'type':   'text',
+                        'data':   chunk_text,
+                        'cached': True
+                    })}\n\n"
+                    await asyncio.sleep(0.02)
+
+            else:
+                # ✅ Cache miss — normal RAG streaming
+                media_refs = result.get("media_refs")
+                if media_refs:
+                    yield f"data: {json.dumps({
+                        'type':       'media',
+                        'media_refs': media_refs,
                     })}\n\n"
 
-                if chunk.usage_metadata:
-                    prompt_tokens = chunk.usage_metadata.get("input_tokens", 0)
-                    completion_tokens = chunk.usage_metadata.get("output_tokens", 0)
-                    total_tokens = prompt_tokens + completion_tokens
+                async for chunk in llm.astream(result.get("messages", [])):
+                    content = ""
 
-                    if total_tokens > 0:
-                        total_cost = (
-                            (prompt_tokens * INPUT_COST) +
-                            (completion_tokens * OUTPUT_COST)
-                        )
+                    if isinstance(chunk.content, str):
+                        content = chunk.content
+                    elif isinstance(chunk.content, list):
+                        for item in chunk.content:
+                            if isinstance(item, dict):
+                                if item.get("type") == "text":
+                                    content += item.get("text", "")
+                            elif hasattr(item, "text"):
+                                content += item.text
 
-                # print("CHUNK =>", chunk)
+                    if content:
+                        full_response += content
+                        yield f"data: {json.dumps({
+                            'type': 'text',
+                            'data': content
+                        })}\n\n"
+
+                    if chunk.usage_metadata:
+                        prompt_tokens     = chunk.usage_metadata.get("input_tokens", 0)
+                        completion_tokens = chunk.usage_metadata.get("output_tokens", 0)
+                        total_tokens      = prompt_tokens + completion_tokens
+                        if total_tokens > 0:
+                            total_cost = (
+                                (prompt_tokens * INPUT_COST) +
+                                (completion_tokens * OUTPUT_COST)
+                            )
+
+                # ✅ Store in Redis after full response collected
+                if full_response and result.get("should_cache"):
+                    await set_semantic_cache(
+                        session_id   = session_id,
+                        query        = payload.query,
+                        response     = full_response,
+                        embedder     = embedder,
+                        target_files = result.get("target_files")
+                    )
 
             yield f"data: {json.dumps({
                 'type':              'usage',
@@ -253,11 +269,10 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
             })}\n\n"
 
             ai_file_refs = []
-            if media_refs:
-                for ref in media_refs:
+            if result.get("media_refs"):
+                for ref in result.get("media_refs"):
                     if not ref.get("document_id"):
                         continue
-
                     ai_file_refs.append(FileReference(
                         document_id      = PydanticObjectId(ref["document_id"]),
                         file_name        = ref.get("file_name", ""),
@@ -296,12 +311,12 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
                 *result.get("chat_history", []),
                 AIMessage(content=full_response)
             ]
-            
+
             await graph.aupdate_state(
                 config,
                 {
                     "message_index": current_index + 2,
-                    "chat_history": new_chat_history
+                    "chat_history":  new_chat_history
                 }
             )
 
@@ -326,23 +341,21 @@ async def query(payload: ChatRequest, user_id = Depends(get_current_user)):
             stream_generator(),
             media_type="text/event-stream",
             headers={
-                "Cache-Control":         "no-cache",
-                "X-Accel-Buffering":     "no",
+                "Cache-Control":               "no-cache",
+                "X-Accel-Buffering":           "no",
                 "Access-Control-Allow-Origin": "*",
-                "session-id":            session_id,
+                "session-id":                  session_id,
             }
         )
 
     except HTTPException:
         raise
-
     except Exception as e:
-        print("Error in /chat/query:", (e))
+        print("Error in /chat/query:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=repr(e)
         )
-
 
 @router.get("/sessions")
 async def get_chat_sessions( page: int = Query(1, ge=1), limit: int = Query(10, ge=1, le=100), user_id=Depends(get_current_user) ):

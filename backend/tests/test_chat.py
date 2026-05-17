@@ -441,6 +441,141 @@ async def test_get_sessions_empty_list(authenticated_client, registered_user):
     assert data["pagination"]["total_sessions"] == 0
 
 
+async def test_query_temp_id_migration_existing_session_doc(authenticated_client, registered_user):
+    user = await User.find_one({"email": registered_user["email"]})
+    temp_id = "test_migrate_temp_exist_001"
+    session_id = "test_session_exist_doc_001"
+    await cleanup_session(session_id)
+
+    # Insert existing SessionDocument
+    await SessionDocument(
+        session_id=session_id, user_id=str(user.id),
+        file_name="test_doc.pdf", file_url="http://example.com/test_doc.pdf",
+        file_type="pdf", content_type="application/pdf",
+        full_text="Old content", chunks=[], embedded=True
+    ).insert()
+
+    mock_chunks = [{"text": "Test chunk", "chunk_index": 0, "metadata": {"page": 1}}]
+    await TempData(
+        temp_id=temp_id, file_id=f"file_{uuid.uuid4().hex}",
+        user_id=str(user.id), file_name="test_doc.pdf",
+        file_url="http://example.com/test_doc.pdf", file_type="pdf",
+        content_type="application/pdf", full_text="Test content",
+        chunks=mock_chunks, embedded=False
+    ).insert()
+
+    mock_llm = MagicMock()
+    mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
+         patch("app.router.chat.embed_and_store") as mock_embed:
+        res = await authenticated_client.post(
+            "/api/v1/chat/query",
+            json={"query": "Analyze my document", "temp_id": temp_id, "session_id": session_id}
+        )
+        assert res.status_code == 200
+        mock_embed.assert_not_called()
+
+    await cleanup_session(session_id)
+
+
+async def test_query_cache_hit(authenticated_client):
+    graph_result_cache = {
+        "title": "Cached Chat", "message_index": 0,
+        "chat_history": [], "messages": [],
+        "cache_hit": True, "cached_response": "Cached answer words"
+    }
+
+    mock_llm = MagicMock()
+    # astream should not be called on cache hit
+    mock_llm.astream = MagicMock(side_effect=Exception("astream called on cache hit!"))
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_cache)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Repeat query"})
+        assert res.status_code == 200
+        assert "Cached " in res.text
+        assert "answer " in res.text
+        assert "words " in res.text
+        assert "cached" in res.text
+
+
+async def test_query_chunk_content_hasattr_text(authenticated_client):
+    class TextObj:
+        text = "hasattr text content"
+    class HasattrChunk:
+        content = [TextObj()]
+        usage_metadata = {"input_tokens": 10, "output_tokens": 10}
+
+    mock_llm = MagicMock()
+    mock_llm.astream = lambda msgs: _async_iter([HasattrChunk()])
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=MOCK_GRAPH_RESULT)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Test hasattr"})
+        assert res.status_code == 200
+        assert "hasattr text content" in res.text
+
+
+async def test_query_should_cache_stores_in_redis(authenticated_client):
+    graph_result_should_cache = {
+        "title": "Cache Store Chat", "message_index": 0,
+        "chat_history": [], "messages": [],
+        "should_cache": True, "target_files": ["doc.pdf"]
+    }
+
+    mock_llm = MagicMock()
+    mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_should_cache)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
+         patch("app.router.chat.set_semantic_cache") as mock_set_cache:
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Store this in cache"})
+        assert res.status_code == 200
+        mock_set_cache.assert_called_once()
+
+
+async def test_query_media_refs_missing_document_id(authenticated_client):
+    graph_result_media_missing_id = {
+        "title": "Media Missing ID Chat", "message_index": 0,
+        "chat_history": [], "messages": [],
+        "media_refs": [{"file_name": "video.mp4", "start": 0, "end": 10}]
+    }
+
+    mock_llm = MagicMock()
+    mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_media_missing_id)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()):
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Media missing id"})
+        assert res.status_code == 200
+        assert "video.mp4" in res.text
+
+
+async def test_query_triggers_background_summarizer(authenticated_client):
+    graph_result_summarizer = {
+        "title": "Summarizer Chat", "message_index": 14,
+        "chat_history": [HumanMessage(content="msg")] * 7, "messages": []
+    }
+
+    mock_llm = MagicMock()
+    mock_llm.astream = lambda msgs: _async_iter([MOCK_STREAM_CHUNK])
+
+    with patch("app.router.chat.graph.ainvoke", new=AsyncMock(return_value=graph_result_summarizer)), \
+         patch("app.router.chat.get_openai_llm", return_value=mock_llm), \
+         patch("app.router.chat.graph.aupdate_state", new=AsyncMock()), \
+         patch("app.router.chat.run_summarizer_background") as mock_run_summarizer:
+        res = await authenticated_client.post("/api/v1/chat/query", json={"query": "Trigger summary"})
+        assert res.status_code == 200
+        mock_run_summarizer.assert_called_once()
+
+
 async def _async_iter(items):
     for item in items:
         yield item

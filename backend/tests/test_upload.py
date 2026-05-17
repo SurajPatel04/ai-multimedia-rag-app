@@ -1,16 +1,21 @@
 import pytest
 import io
+import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from app.models.temp_data import TempData
 from app.services.file_processor import generate_temp_id
 from app.utils.file_upload_supabase import get_fresh_signed_url
 from app.router.file_upload import process_file
 from app.router.file_upload import save_file_locally
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 import os
 from beanie import PydanticObjectId
 import uuid
 from app.models.user import User
+from app.router.file_upload import process_and_upload
+
+
+# shared helpers
 
 def make_pdf_file(filename="test.pdf", size=1024):
     content = b"%PDF-1.4 fake pdf content " + b"x" * size
@@ -20,6 +25,10 @@ def make_pdf_file(filename="test.pdf", size=1024):
 def make_audio_file(filename="test.mp3", size=1024):
     content = b"ID3 fake audio content " + b"x" * size
     return (filename, io.BytesIO(content), "audio/mpeg")
+
+
+def _upload_file(content=b"dummy pdf", filename="test.pdf", content_type="application/pdf"):
+    return ("files", (filename, io.BytesIO(content), content_type))
 
 
 MOCK_SUPABASE_RESULT = {
@@ -40,6 +49,8 @@ MOCK_PROCESS_RESULT = {
     ]
 }
 
+
+# existing integration tests
 
 async def test_upload_invalid_file_type(authenticated_client):
     res = await authenticated_client.post(
@@ -89,6 +100,7 @@ async def test_upload_audio_success(authenticated_client):
 
         await TempData.find({"temp_id": res.json()["temp_id"]}).delete()
 
+
 async def test_upload_replace_files(authenticated_client):
     with patch(
         "app.router.file_upload.upload_file_to_supabase",
@@ -97,7 +109,6 @@ async def test_upload_replace_files(authenticated_client):
         "app.router.file_upload.process_file",
         return_value=MOCK_PROCESS_RESULT
     ):
-        # first upload
         res1 = await authenticated_client.post(
             "/api/v1/upload",
             files={"files": make_pdf_file("first.pdf")}
@@ -162,9 +173,8 @@ async def test_save_file_locally():
 
     os.remove(result["path"])
 
-def test_generate_temp_id():
-    
 
+def test_generate_temp_id():
     id1 = generate_temp_id()
     id2 = generate_temp_id()
 
@@ -172,10 +182,10 @@ def test_generate_temp_id():
     assert id1 != id2
     assert len(id1) > 8
 
+
 async def test_get_fresh_signed_url_with_full_url():
     full_url = "https://example.supabase.co/storage/v1/object/public/documents/file.pdf"
     result = await get_fresh_signed_url(full_url)
-
     assert result == full_url
 
 
@@ -200,11 +210,11 @@ async def test_upload_internal_server_error(authenticated_client):
     with patch("app.router.file_upload.process_file", side_effect=Exception("Disk Full!")):
         files = {"files": ("test.pdf", b"abc", "application/pdf")}
         res = await authenticated_client.post("/api/v1/upload", files=files)
-        
+
         assert res.status_code == 500
         assert "Disk Full!" in res.text
 
-    
+
 async def test_cancel_file_success(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
 
@@ -267,7 +277,6 @@ async def test_cancel_file_wrong_user(authenticated_client):
     res = await authenticated_client.delete(f"/api/v1/upload/cancel/{temp_id}/{file_id}")
     assert res.status_code == 404
 
-    # cleanup
     await TempData.find(TempData.temp_id == temp_id).delete()
 
 
@@ -327,3 +336,255 @@ async def test_cancel_file_does_not_delete_other_files(authenticated_client, reg
     assert doc2 is not None
 
     await TempData.find(TempData.temp_id == temp_id).delete()
+
+async def test_save_file_locally_exceeds_size_limit(tmp_path):
+    one_mb = b"x" * (1024 * 1024)
+    call_count = 0
+
+    async def big_read(_size):
+        nonlocal call_count
+        call_count += 1
+        return one_mb if call_count <= 51 else b""
+
+    mock_file = MagicMock(spec=UploadFile)
+    mock_file.filename = "huge.pdf"
+    mock_file.content_type = "application/pdf"
+    mock_file.read = big_read
+    mock_file.close = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await save_file_locally(mock_file)
+
+    assert exc_info.value.status_code == 400
+    assert "exceeds" in exc_info.value.detail
+
+async def test_upload_file_exceeds_size_limit_via_router(authenticated_client):
+    with patch(
+        "app.router.file_upload.save_file_locally",
+        side_effect=HTTPException(status_code=400, detail="big.pdf exceeds 100MB limit"),
+    ):
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+        )
+
+    assert res.status_code == 400
+    assert "exceeds" in res.text.lower()
+
+async def test_upload_disconnected_before_upload_task(authenticated_client):
+    with (
+        patch("app.router.file_upload.upload_file_to_supabase", new_callable=AsyncMock),
+        patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
+        patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-before"),
+        patch(
+            "starlette.requests.Request.is_disconnected",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch("os.path.exists", return_value=False),
+    ):
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+        )
+    assert res.status_code in (200, 499)
+
+async def test_upload_disconnected_during_upload_task(authenticated_client):
+    call_n = 0
+
+    async def third_true():
+        nonlocal call_n
+        call_n += 1
+        return call_n == 3
+
+    slow_task = MagicMock()
+    slow_task.done.return_value = False
+    slow_task.cancel = MagicMock()
+
+    with (
+        patch("asyncio.create_task", return_value=slow_task),
+        patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-during"),
+        patch("app.router.file_upload.TempData"),
+        patch("os.path.exists", return_value=False),
+        patch("starlette.requests.Request.is_disconnected", side_effect=third_true),
+    ):
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+        )
+
+    assert res.status_code == 200
+    assert res.json()["data"] == []
+    slow_task.cancel.assert_called_once()
+
+async def test_upload_disconnected_before_processing():
+    call_n = 0
+    async def second_true():
+        nonlocal call_n
+        call_n += 1
+        return call_n >= 2
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = second_true
+
+    saved = {"original_name": "t.pdf", "saved_name": "u.pdf", "path": "/tmp/fake_dc.pdf"}
+    mock_file = MagicMock()
+    mock_file.filename = "t.pdf"
+
+    with (
+        patch(
+            "app.router.file_upload.upload_file_to_supabase",
+            new_callable=AsyncMock,
+            return_value={"file_path": "docs/f.pdf", "signed_url": "https://x"},
+        ),
+        patch("os.path.exists", return_value=False),
+    ):
+        result = await process_and_upload(
+            "tid-before-proc", saved, mock_file, "fake-user-id", mock_request
+        )
+
+    assert result is None
+
+async def test_upload_disconnected_during_processing(authenticated_client):
+    call_n = 0
+
+    async def fourth_true():
+        nonlocal call_n
+        call_n += 1
+        return call_n == 4
+
+    with (
+        patch(
+            "app.router.file_upload.upload_file_to_supabase",
+            new_callable=AsyncMock,
+            return_value={"file_path": "docs/f.pdf", "signed_url": "https://x"},
+        ),
+        patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
+        patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-during-proc"),
+        patch("app.router.file_upload.TempData"),
+        patch("os.path.exists", return_value=False),
+        patch("starlette.requests.Request.is_disconnected", side_effect=fourth_true),
+    ):
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+        )
+
+    assert res.status_code == 200
+    assert res.json()["data"] == []
+
+async def test_upload_disconnected_before_db_insert(authenticated_client):
+    call_n = 0
+
+    async def fifth_true():
+        nonlocal call_n
+        call_n += 1
+        return call_n == 5
+
+    with (
+        patch(
+            "app.router.file_upload.upload_file_to_supabase",
+            new_callable=AsyncMock,
+            return_value={"file_path": "docs/f.pdf", "signed_url": "https://x"},
+        ),
+        patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
+        patch("app.router.file_upload.generate_temp_id", return_value="tid-dc-before-db"),
+        patch("app.router.file_upload.TempData"),
+        patch("os.path.exists", return_value=False),
+        patch("starlette.requests.Request.is_disconnected", side_effect=fifth_true),
+    ):
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+        )
+
+    assert res.status_code == 200
+    assert res.json()["data"] == []
+
+async def test_upload_replacement_branch_disconnected(authenticated_client):
+    with (
+        patch("app.router.file_upload.TempData") as MockTD,
+        patch(
+            "starlette.requests.Request.is_disconnected",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        MockTD.find.return_value.delete = AsyncMock()
+
+        res = await authenticated_client.post(
+            "/api/v1/upload",
+            files=[_upload_file()],
+            data={"temp_id": "existing-tid-replace"},
+        )
+
+    assert res.status_code in (200, 499)
+    if res.status_code == 200:
+        assert res.json()["data"] == []
+
+async def test_upload_cancelled_error_is_reraised():
+    from app.router.file_upload import upload_files
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+
+    mock_file = MagicMock(spec=UploadFile)
+    mock_file.content_type = "application/pdf"
+    mock_file.filename = "t.pdf"
+
+    with (
+        patch("app.router.file_upload.save_file_locally", side_effect=asyncio.CancelledError),
+        patch("app.router.file_upload.generate_temp_id", return_value="tid-cancel"),
+    ):
+        with pytest.raises(asyncio.CancelledError):   # must NOT be swallowed as 500
+            await upload_files(
+                request=mock_request,
+                files=[mock_file],
+                temp_id=None,
+                changed_files=None,
+                user="fake-user-id",
+            )
+
+async def test_process_and_upload_disconnected_before_upload():
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=True)
+
+    saved = {"original_name": "t.pdf", "saved_name": "u.pdf", "path": "/tmp/fake_dc.pdf"}
+    mock_file = MagicMock()
+    mock_file.filename = "t.pdf"
+
+    with patch("os.path.exists", return_value=False):
+        result = await process_and_upload(
+            "tid-before-up", saved, mock_file, "fake-user-id", mock_request
+        )
+
+    assert result is None
+
+async def test_process_and_upload_disconnected_before_db_insert():
+    call_n = 0
+    async def true_before_db():
+        nonlocal call_n
+        call_n += 1
+        return call_n >= 5
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = true_before_db
+
+    saved = {"original_name": "t.pdf", "saved_name": "u.pdf", "path": "/tmp/fake_dc.pdf"}
+    mock_file = MagicMock()
+    mock_file.filename = "t.pdf"
+
+    with (
+        patch(
+            "app.router.file_upload.upload_file_to_supabase",
+            new_callable=AsyncMock,
+            return_value={"file_path": "docs/f.pdf", "signed_url": "https://x"},
+        ),
+        patch("app.router.file_upload.process_file", return_value=MOCK_PROCESS_RESULT),
+        patch("os.path.exists", return_value=False),
+    ):
+        result = await process_and_upload(
+            "tid-before-db", saved, mock_file, "fake-user-id", mock_request
+        )
+
+    assert result is None

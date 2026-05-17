@@ -6,18 +6,39 @@ from app.models.chat_session import ChatSession
 
 async def title_generator_node(state: State):
     llm = get_google_llm()
-    # print("----- TITLE GENERATOR NODE -----")
 
     if state.message_index > 0:
         return {}
 
     llm_with_structure = llm.with_structured_output(TitleGenerationSchema)
-    system_prompt = """
+
+    file_names = state.uploaded_files or state.latest_files or []
+    file_context = (
+        f"Uploaded files: {', '.join(file_names)}"
+        if file_names
+        else "No files uploaded"
+    )
+
+    system_prompt = f"""
     Generate a short, concise title (max 6 words) for this chat session
-    based on the user's first message.
-    Return ONLY the title, nothing else.
-    Example: "Resume Analysis for John", "Audio File Summary"
+    based on the user's first message and the uploaded file names.
+
+    {file_context}
+
+    RULES:
+    - If files are uploaded, include the file name or topic from the file name in the title
+    - Make the title specific to the actual file, not generic
+    - Max 6 words
+    - Return ONLY the title, nothing else
+
+    Examples:
+    files: ["SurajPatelResume.pdf"]    → "Resume Review for Suraj Patel"
+    files: ["lecture_audio.mp3"]       → "Lecture Audio Analysis"
+    files: ["meeting_recording.mp4"]   → "Meeting Recording Summary"
+    files: ["SDE-1_Assignment.pdf"]    → "SDE-1 Assignment Breakdown"
+    no files:                          → "General Chat Session"
     """
+
     response = await llm_with_structure.ainvoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=state.query)
@@ -31,6 +52,4 @@ async def title_generator_node(state: State):
 
     print(f"Title generated: {title}")
 
-    return {
-        "title": title
-    }
+    return {"title": title}

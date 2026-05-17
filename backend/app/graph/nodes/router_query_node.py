@@ -4,6 +4,10 @@ from app.graph.state import State
 from app.graph.schemas import QueryRouterState
 from app.utils.llm import get_google_llm
 
+from app.utils.router_history import build_router_history
+
+
+
 async def router_query_node(state: State):
     llm = get_google_llm()
 
@@ -18,133 +22,96 @@ async def router_query_node(state: State):
     uploaded_files = state.uploaded_files
     latest_files = state.latest_files
 
+    recent_chat = build_router_history(state.chat_history)
+
+    last_active_files = state.last_active_files
+
     # print("------ uploaded_files : ------",uploaded_files)
     # print("------ latest_files : ------",latest_files)
 
     # print("----summary: -------", state.summary)
 
     systemPrompt = f"""
-    You are a query router for a file-analysis RAG system. 
-    The previous messages summary is: {summary}.
-    All files in session : {uploaded_files}
-    Latest uploaded files: {latest_files}
+You are a query router for a file-analysis RAG system. 
+Recent conversation:
+{recent_chat}
 
+Last active files:
+{last_active_files}  Means this file is used to give the answer of the last question
 
-    NOTE: 
-    - If the user said "what in side" or related sentence use the latest_files or in the uploaded_files last index 
-    Example: latest_files is present 
-        uploaded_files is [ab.pdf, dc.pdf] 
-        latest_files is [dc.pdf]
-            user query is "what inside the file?" or releated words then the target file should be dc.pdf because it is the latest file and also it is present in the uploaded_files
-    
-    Example: latest_files is empty
-        uploaded_files is [ab.pdf, dc.pdf] 
-        latest_files is []
-            user query is "what inside the file?" or releated words then the target file should be dc.pdf because it is the last index of the uploaded_files and also it is present in the uploaded_files
+All files in session: {uploaded_files}
+Latest uploaded files: {latest_files}
 
-    IMPORTANT RULE: 
-        - If files are present in the session, ALWAYS assume the user 
-        is asking about those files unless the query is clearly conversational 
-        (greetings, thanks, general questions about your capabilities).
-        Never return "direct_llm" when files are present and the query could 
-        relate to file content in any way.
+PURPOSE
+Decide which service to use:
+- "vector_search": for targeted queries (find specific facts, keywords, tech, numbers, dates, sections, entities, or whether something exists in the files).
+- "mongo_db_retrieve": for broad, whole‑file or general questions (summarize, overview, what to do/build/need, requirements, features).
+- "direct_llm": only for purely conversational messages with zero relation to files (e.g., "Hi", "Thanks", "Can you help me?").
 
-        - If the Router is vector_search then give the extra query and those extra query should not related to each other
+And  - should_cache: whether the final answer should be stored in semantic cache
 
+CACHE RULES:
+    SEMANTIC CACHE POLICY
 
-    Decide one mode:
+    CACHE ONLY:
+    - stable educational knowledge
+    - semantic retrieval answers
+    - explanations about uploaded files
+    - technical explanations
+    - summaries that are unlikely to change
 
-    "vector_search" — user asks to FIND or SEARCH for specific facts, keywords, 
-    tech, numbers, dates, sections, named entities, or whether something appears 
-    in the files.
-    (e.g., "What is the bonus feature?", "Is Python mentioned?", "What is the CGPA?")
+    DO NOT CACHE:
+    - conversational reference questions
+    - session‑dependent questions
+    - repeat/regenerate requests
+    - temporary conversational context
+    - greetings
+    - real‑time questions
 
-    "mongo_db_retrieve" — user asks for a broad explanation or overview of an 
-    ENTIRE file OR asks a vague/general question about what to do, what is 
-    needed, what is required, what features exist.
-    (e.g., "Summarize resume.pdf", "What do i need to build?", "What are the requirements?")
+RULES
 
-    "direct_llm" — ONLY for purely conversational queries with zero relation 
-    to uploaded files.
-    (e.g., "Hello", "Hi", "Good Morning", "Thanks")
+1. With files present
+   - ALWAYS assume the user is asking about files unless the query is clearly conversational.
+   - Never return "direct_llm" when files exist and the query could relate to content in any way.
 
-    Output ONLY a raw JSON object with NO markdown, NO explanation, NO ```json fences.
+2. Informal file references
+   - Resolve informal references (e.g., "this file", "the assignment", "my resume") to ALL matching filenames from {uploaded_files} or {latest_files}.
+   - If the reference is ambiguous and matches multiple files, include ALL matching files in target_files (MULTI‑FILE RULE).
 
-    Fields:
+3. "What inside the file?"‑style phrases
+   - If the user says "what inside the file?" or similar:
+     - If latest_files is non‑empty, use the latest file(s) that also appear in uploaded_files.
+     - If latest_files is empty, use the last file in uploaded_files.
 
-    mode: one of "vector_search", "mongo_db_retrieve", or "direct_llm".
+4. Mode choice
+   - Prefer "vector_search" for:
+     - Is/Tell me whether X is mentioned/present?
+     - What is X? (where X is a specific fact, term, number, etc.)
+     - Short keyword‑based searches.
+   - Prefer "mongo_db_retrieve" for:
+     - "Summarize X", "Explain the whole file", "What should I build?", "What are the requirements?".
+   - Use "direct_llm" only when the query is clearly conversational and unrelated to files.
 
-    CRITICAL for target_files resolution:
-    When the user refers to a file informally, resolve it to ALL matching 
-    filenames from {uploaded_files} or {latest_files}.
+5. extra_query
+   - For "vector_search", extra_query must be 2–3 rephrased queries that:
+     - Expand acronyms.
+     - Use alternative terminology.
+     - Are NOT closely related to each other.
+   - For "mongo_db_retrieve" and "direct_llm", set extra_query to null.
 
-    MULTI-FILE RULE: If the user's reference is ambiguous and could match 
-    multiple files (e.g. "the assignment" when multiple assignment files exist),
-    include ALL matching files in target_files — do NOT pick just one.
+6. Formatting
+   - Output ONLY a raw JSON object, with:
+     {{
+       "mode": one of "vector_search", "mongo_db_retrieve", "direct_llm",
+       "target_files": [list of filenames] or null,
+       "extra_query": [2–3 strings] or null
+        - "should_cache": boolean (True if the final answer should be cached, False otherwise)
+     }}
+   - No markdown, no explanation, no ```json fences.
 
-    Examples:
-    uploaded_files: ["SDE-1_ Programming Assignment.pdf", "Credex WebDev 2026 Assignment.pdf", "resume.pdf"]
+7. If the user is asking whether something is mentioned, present, or exists in a file → ALWAYS use "vector_search".
 
-    Input: "Give me summary of the assignment"
-    → ALL files with "assignment" in the name match
-    → {{"mode": "mongo_db_retrieve", "target_files": ["SDE-1_ Programming Assignment.pdf", "Credex WebDev 2026 Assignment.pdf"], "extra_query": null}}
-
-    Input: "summarize the SDE assignment"  
-    → Only one file matches "SDE"
-    → {{"mode": "mongo_db_retrieve", "target_files": ["SDE-1_ Programming Assignment.pdf"], "extra_query": null}}
-
-    Input: "summarize my resume"
-    → {{"mode": "mongo_db_retrieve", "target_files": ["resume.pdf"], "extra_query": null}}
-
-    When user says "assignment file", "the assignment", "this assignment" 
-    → match to ALL assignment files in: {uploaded_files} or {latest_files}
-    When user says "resume", "my resume", "the resume" 
-    → match to the resume file in: {uploaded_files} or {latest_files}
-    Always resolve informal references to ALL matching exact filenames.
-
-    extra_query: for "vector_search" only — return 2–3 rephrased queries that 
-    expand acronyms and use alternative terminology. 
-    Set null for all other modes.
-
-    Examples:
-
-    Input: "Is MERN mentioned?"
-    → {{"mode": "vector_search", "target_files": null, "extra_query": ["MongoDB Express React Node.js", "JavaScript full-stack web development", "React Node.js backend with MongoDB"]}}
-
-    Input: "In the assignment file is Python mentioned?"
-    → {{"mode": "vector_search", "target_files": ["SDE-1_ Programming Assignment.pdf","other_file_Assigment_file.pdf","surajpate.pdf], "extra_query": ["Python programming language", "Python backend FastAPI Django", "Python web framework"]}}
-
-    Input: "What is the bonus feature i need to add?"
-    → {{"mode": "vector_search", "target_files": ["SDE-1_ Programming Assignment.pdf"], "extra_query": ["bonus points", "optional features", "extra credit functionality"]}}
-
-    Input: "Summarize resume.pdf"
-    → {{"mode": "mongo_db_retrieve", "target_files": ["SurajPatelResume (10).pdf"], "extra_query": null}}
-
-    Input: "What do i need to build?"
-    → {{"mode": "mongo_db_retrieve", "target_files": null, "extra_query": null}}
-
-    Input: "Hi"
-    → {{"mode": "direct_llm", "target_files": null, "extra_query": null}}
-
-    Always prefer "vector_search" for targeted queries. 
-    Always prefer "mongo_db_retrieve" for whole-file or broad overview questions.
-
-
-CRITICAL: The words "detailed", "explain", "500 words", "in depth" describe 
-HOW to answer, NOT what mode to use. Always base the mode decision on WHAT 
-the user is looking for, not how long or detailed they want the answer.
-
-If the user is asking whether something is mentioned, present, or exists 
-in a file → ALWAYS "vector_search", regardless of how detailed they want 
-the answer.
-
-Input: "In this assignment file is python tech mentioned give me detailed 500 word answer"
-→ {{"mode": "vector_search", "target_files": ["SDE-1_ Programming Assignment.pdf"], "extra_query": ["Python programming language", "Python backend FastAPI Django", "Python web framework"]}}
-
-Input: "Explain in detail what technologies are mentioned in the resume"
-→ {{"mode": "vector_search", "target_files": ["SurajPatelResume (10).pdf"], "extra_query": ["tech stack", "programming languages", "frameworks and tools"]}}
-   
-   """
+"""
 
     msg = [
         SystemMessage(content=systemPrompt),
@@ -153,20 +120,30 @@ Input: "Explain in detail what technologies are mentioned in the resume"
 
     try:
         response = await structuredLlm.ainvoke(msg)
+        print("Respnse:  ", response)
         print("Router decision:", response.mode)
         print("Target files:", response.target_files)
         print("Extra queries:", response.extra_query)
+        print("Last active files:", response.target_files if response.target_files else state.last_active_files)
 
         return {
             "mode": response.mode,
             "extra_query": response.extra_query or [],
-            "target_files": response.target_files
+            "target_files": response.target_files,
+            "should_cache": response.should_cache,
+            "last_active_files": (
+                response.target_files
+                if response.target_files
+                else state.last_active_files
+            )
         }
 
     except Exception as e:
         print("Router error:", e)
         return {
-            "mode": "direct_llm_call",
+            "mode": "direct_llm",
             "extra_query": [],
-            "target_files": None
+            "target_files": None,
+            "should_cache": False,
+            "last_active_files": state.last_active_files
         }

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str
     SUPABASE_KEY: str
     SUPABASE_URL: str
+    REDIS_URL: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

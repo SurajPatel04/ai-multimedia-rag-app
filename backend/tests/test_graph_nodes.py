@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from app.graph.state import State
 from app.graph.nodes.context_builder_node import context_builder_node
 from app.graph.nodes.router_query_node import router_query_node
-from app.graph.workflow import route_query
+from app.graph.workflow import route_after_cache
 from app.graph.nodes.title_generator_node import title_generator_node
 from app.graph.nodes.mongo_db_retrieve_node import mongo_db_retrieve_node
 from app.graph.nodes.vector_search_node import vector_search_node
@@ -32,6 +32,10 @@ def make_state(**kwargs):
         "media_refs": None,
         "mode": None,
         "response": None,
+        "cache_hit":       False,
+        "cached_response": None,
+        "skip_cache":      False,
+        "should_cache":    False,
     }
     defaults.update(kwargs)
     return State(**defaults)
@@ -118,6 +122,7 @@ async def test_router_returns_vector_search():
     mock_response.mode = "vector_search"
     mock_response.target_files = ["test.pdf"]
     mock_response.extra_query = ["alternative query"]
+    mock_response.should_cache = True
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
@@ -135,6 +140,7 @@ async def test_router_returns_direct_llm():
     mock_response.mode = "direct_llm"
     mock_response.target_files = None
     mock_response.extra_query = None
+    mock_response.should_cache = False
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
@@ -152,6 +158,7 @@ async def test_router_returns_mongo_db_retrieve():
     mock_response.mode = "mongo_db_retrieve"
     mock_response.target_files = ["resume.pdf"]
     mock_response.extra_query = None
+    mock_response.should_cache = True
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=mock_response)
@@ -173,7 +180,7 @@ async def test_router_fallback_on_error():
         state = make_state(query="What is this?")
         result = await router_query_node(state)
 
-    assert result["mode"] == "direct_llm_call"
+    assert result["mode"] == "direct_llm"
     assert result["extra_query"] == []
     assert result["target_files"] is None
 
@@ -433,34 +440,39 @@ async def test_run_summarizer_generates_summary():
 
 def test_should_generate_title_when_title_empty():
     state = make_state(title="")
-    assert should_generate_title(state) == "title_generator"
+    assert should_generate_title(state) == "generate"
 
 
 def test_should_skip_title_when_already_set():
     state = make_state(title="Existing Title")
-    assert should_generate_title(state) == "router_query"
+    assert should_generate_title(state) == "skip"
 
 
-def test_route_query_vector_search():
-    state = make_state(mode="vector_search")
-    assert route_query(state) == "vector_search"
+def test_route_after_cache_hit():
+    state = make_state(cache_hit=True, mode="vector_search")
+    assert route_after_cache(state) == "end"
 
 
-def test_route_query_mongo_db_retrieve():
-    state = make_state(mode="mongo_db_retrieve")
-    assert route_query(state) == "mongo_db_retrieve"
+def test_route_after_cache_vector_search():
+    state = make_state(cache_hit=False, mode="vector_search")
+    assert route_after_cache(state) == "vector_search"
 
 
-def test_route_query_direct_llm():
-    state = make_state(mode="direct_llm")
-    assert route_query(state) == "direct_llm"
+def test_route_after_cache_mongo_db_retrieve():
+    state = make_state(cache_hit=False, mode="mongo_db_retrieve")
+    assert route_after_cache(state) == "mongo_db_retrieve"
 
 
-def test_route_query_fallback_to_direct_llm():
-    state = SimpleNamespace(mode="direct_llm_call")
-    assert route_query(state) == "direct_llm"
+def test_route_after_cache_direct_llm():
+    state = make_state(cache_hit=False, mode="direct_llm")
+    assert route_after_cache(state) == "direct_llm"
 
 
-def test_route_query_none_mode_fallback():
-    state = make_state(mode=None)
-    assert route_query(state) == "direct_llm"
+def test_route_after_cache_fallback_to_direct_llm():
+    state = SimpleNamespace(cache_hit=False, mode="direct_llm_call")
+    assert route_after_cache(state) == "direct_llm_call"
+
+
+def test_route_after_cache_none_mode_fallback():
+    state = make_state(cache_hit=False, mode=None)
+    assert route_after_cache(state) is None

@@ -6,6 +6,7 @@ from app.helpers.vector_db import store_vectors, delete_session_vectors
 from app.utils.embeddings import get_embeddings
 from app.utils.video_to_audio_converter import VIDEO_EXTENSIONS, convert_video_to_audio
 from langchain_core.documents import Document as LangchainDocument
+from langchain_community.vectorstores import FAISS
 
 embeddings = get_embeddings()
 
@@ -115,13 +116,8 @@ def _process_audio_video_file(temp_id: str, file_path: str) -> dict:
 
 
 def embed_and_store(user_id: str, session_id: str, temp_id: str, chunks: list, file_type: str, file_name: str = ""):
-    """
-    First message time embed chunks and store in FAISS
-    """
-
     documents = []
     for chunk in chunks:
-        # Normalize: handle both dict and Pydantic ContentChunk objects
         if hasattr(chunk, "model_dump"):
             chunk = chunk.model_dump()
 
@@ -131,26 +127,43 @@ def embed_and_store(user_id: str, session_id: str, temp_id: str, chunks: list, f
                 metadata={
                     **chunk["metadata"],
                     "chunk_index": chunk["chunk_index"],
-                    "file_type": file_type,
-                    "file_name": file_name,
-                    "session_id": session_id,
-                    "temp_id": temp_id
+                    "file_type":   file_type,
+                    "file_name":   file_name,
+                    "session_id":  session_id,
+                    "temp_id":     temp_id
                 }
             )
         )
 
-    store_vectors(user_id, session_id, documents, embeddings, file_name)
+    texts = [doc.page_content for doc in documents]
+    vectors = embeddings.embed_documents(texts)
 
-    print(
-        f"Embedded {len(documents)} chunks "
-        f"for user: {user_id}, session: {session_id}"
-    )
+    text_embedding_pairs = list(zip(texts, vectors))
+
+    index_path = f"faiss_indexes/{user_id}"
+    os.makedirs(index_path, exist_ok=True)
+
+    if os.path.exists(f"{index_path}/index.faiss"):
+        store = FAISS.load_local(
+            index_path,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+        store.add_embeddings(
+            text_embeddings=text_embedding_pairs,
+            metadatas=[doc.metadata for doc in documents]
+        )
+    else:
+        store = FAISS.from_embeddings(
+            text_embeddings=text_embedding_pairs,
+            embedding=embeddings,
+            metadatas=[doc.metadata for doc in documents]
+        )
+
+    store.save_local(index_path)
+
+    print(f"Embedded {len(documents)} chunks for user: {user_id}, session: {session_id}")
 
 def replace_file(temp_id: str, new_file_path: str) -> dict:
-    """
-    User changed file before sending message
-    MongoDB doc deleted by route handler
-    No FAISS cleanup needed (not embedded yet)
-    """
     print(f"Replacing file for temp: {temp_id}")
     return process_file(temp_id, new_file_path)

@@ -1,8 +1,6 @@
 import subprocess
 import os
 import uuid
-
-# ← add this, whisper_transcriber.py imports it
 VIDEO_EXTENSIONS = {"mp4", "mkv", "mov", "avi", "webm", "flv"}
 
 

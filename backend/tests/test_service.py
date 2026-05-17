@@ -14,6 +14,10 @@ from app.services.file_processor import _process_audio_video_file
 from app.services.file_processor import embed_and_store
 from app.services.file_processor import replace_file
 from app.services.llm_response_stream import stream_response
+from unittest.mock import AsyncMock, MagicMock, patch
+import json
+
+from app.services.semantic_cache import cosine_similarity, get_semantic_cache, set_semantic_cache, invalidate_session_cache, _embed_with_retry
 
 @pytest.mark.asyncio
 async def test_create_access_token_returns_string():
@@ -277,40 +281,64 @@ def test_process_audio_chunk_metadata_has_start_end():
     assert meta["start"] == 10.0
     assert meta["end"]   == 20.0
 
+
 def test_embed_and_store_calls_store_vectors():
     chunks = [
         {"chunk_index": 0, "text": "Hello", "metadata": {"page": 1}},
         {"chunk_index": 1, "text": "World", "metadata": {"page": 2}},
     ]
 
-    with patch("app.services.file_processor.store_vectors") as mock_store:
+    mock_store_instance = MagicMock()
+    mock_embeddings = MagicMock()
+    mock_embeddings.embed_documents.return_value = [[0.1] * 10, [0.2] * 10]
+
+    with patch("app.services.file_processor.embeddings", mock_embeddings), \
+         patch("app.services.file_processor.FAISS") as mock_faiss, \
+         patch("os.path.exists", return_value=False):
+
+        mock_faiss.from_embeddings.return_value = mock_store_instance
+
         embed_and_store(
             user_id="user1", session_id="sess1",
             temp_id="tmp1", chunks=chunks,
             file_type="pdf", file_name="doc.pdf"
         )
 
-    mock_store.assert_called_once()
-    _, _, docs, _, _ = mock_store.call_args[0]
-    assert len(docs) == 2
+        mock_faiss.from_embeddings.assert_called_once()
+        mock_store_instance.save_local.assert_called_once()
 
 
 def test_embed_and_store_injects_metadata():
     chunks = [{"chunk_index": 0, "text": "chunk text", "metadata": {}}]
 
-    with patch("app.services.file_processor.store_vectors") as mock_store:
+    mock_store_instance = MagicMock()
+    mock_embeddings = MagicMock()
+    mock_embeddings.embed_documents.return_value = [[0.1] * 10]
+
+    captured_metadatas = []
+
+    def capture_from_embeddings(text_embeddings, embedding, metadatas):
+        captured_metadatas.extend(metadatas)
+        return mock_store_instance
+
+    with patch("app.services.file_processor.embeddings", mock_embeddings), \
+         patch("app.services.file_processor.FAISS") as mock_faiss, \
+         patch("os.path.exists", return_value=False):
+
+        mock_faiss.from_embeddings.side_effect = capture_from_embeddings
+
         embed_and_store(
             user_id="u1", session_id="s1",
             temp_id="t1", chunks=chunks,
             file_type="pdf", file_name="test.pdf"
         )
 
-    docs = mock_store.call_args[0][2]
-    meta = docs[0].metadata
+    meta = captured_metadatas[0]
     assert meta["session_id"] == "s1"
     assert meta["temp_id"]    == "t1"
     assert meta["file_type"]  == "pdf"
     assert meta["file_name"]  == "test.pdf"
+
 
 
 def test_embed_and_store_accepts_pydantic_chunks():
@@ -319,13 +347,25 @@ def test_embed_and_store_accepts_pydantic_chunks():
         "chunk_index": 0, "text": "Pydantic chunk", "metadata": {}
     }
 
-    with patch("app.services.file_processor.store_vectors") as mock_store:
+    mock_store_instance = MagicMock()
+    mock_embeddings = MagicMock()
+    mock_embeddings.embed_documents.return_value = [[0.1] * 10]
+
+    captured_texts = []
+
+    def capture_from_embeddings(text_embeddings, embedding, metadatas):
+        captured_texts.extend([t for t, _ in text_embeddings])
+        return mock_store_instance
+
+    with patch("app.services.file_processor.embeddings", mock_embeddings), \
+         patch("app.services.file_processor.FAISS") as mock_faiss, \
+         patch("os.path.exists", return_value=False):
+
+        mock_faiss.from_embeddings.side_effect = capture_from_embeddings
         embed_and_store("u", "s", "t", [pydantic_chunk], "pdf", "file.pdf")
 
     pydantic_chunk.model_dump.assert_called_once()
-    docs = mock_store.call_args[0][2]
-    assert docs[0].page_content == "Pydantic chunk"
-
+    assert "Pydantic chunk" in captured_texts
 
 def test_replace_file_delegates_to_process_file(tmp_path):
     f = tmp_path / "new.pdf"
@@ -444,3 +484,240 @@ def test_stream_event_order():
                 pass
     assert types.index("text")  < types.index("usage")
     assert types.index("usage") < types.index("done")
+
+def test_cosine_similarity_identical_vectors():
+    v = [1.0, 0.0, 0.0]
+    assert abs(cosine_similarity(v, v) - 1.0) < 1e-6
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    a = [1.0, 0.0]
+    b = [0.0, 1.0]
+    assert abs(cosine_similarity(a, b)) < 1e-6
+
+
+def test_cosine_similarity_opposite_vectors():
+    a = [1.0, 0.0]
+    b = [-1.0, 0.0]
+    assert abs(cosine_similarity(a, b) + 1.0) < 1e-6
+
+
+def test_cosine_similarity_returns_float():
+    result = cosine_similarity([1.0, 2.0], [3.0, 4.0])
+    assert isinstance(result, float)
+
+@pytest.mark.asyncio
+async def test_embed_with_retry_success_first_attempt():
+    embedder = AsyncMock()
+    embedder.aembed_query.return_value = [0.1, 0.2, 0.3]
+    result = await _embed_with_retry(embedder, "hello")
+    assert result == [0.1, 0.2, 0.3]
+    embedder.aembed_query.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_embed_with_retry_returns_none_on_non_quota_error():
+    embedder = AsyncMock()
+    embedder.aembed_query.side_effect = Exception("some other error")
+    result = await _embed_with_retry(embedder, "hello", max_retries=2)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_embed_with_retry_retries_on_quota_error():
+    embedder = AsyncMock()
+    embedder.aembed_query.side_effect = [
+        Exception("429 resource_exhausted"),
+        [0.5, 0.6],
+    ]
+    with patch("app.services.semantic_cache.asyncio.sleep", new_callable=AsyncMock):
+        result = await _embed_with_retry(embedder, "hello", max_retries=3)
+    assert result == [0.5, 0.6]
+    assert embedder.aembed_query.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_embed_with_retry_exhausts_retries():
+    embedder = AsyncMock()
+    embedder.aembed_query.side_effect = Exception("429 rate limit")
+    with patch("app.services.semantic_cache.asyncio.sleep", new_callable=AsyncMock):
+        result = await _embed_with_retry(embedder, "hello", max_retries=3)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_returns_none_when_embed_fails():
+    embedder = AsyncMock()
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=None):
+        result = await get_semantic_cache("sess1", "query", embedder)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_returns_cached_response_on_hit():
+    embedder = AsyncMock()
+    query_vec = [1.0, 0.0]
+    cached_vec = [1.0, 0.0]
+
+    cached_entry = json.dumps({
+        "query": "old query",
+        "embedding": cached_vec,
+        "response": "cached answer"
+    })
+
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = [b"rag_cache:sess1:old query"]
+    mock_redis.get.return_value = cached_entry
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=query_vec), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        result = await get_semantic_cache("sess1", "query", embedder, threshold=0.85)
+
+    assert result == "cached answer"
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_returns_none_on_miss():
+    embedder = AsyncMock()
+    query_vec  = [1.0, 0.0]
+    cached_vec = [0.0, 1.0]
+
+    cached_entry = json.dumps({
+        "query": "unrelated",
+        "embedding": cached_vec,
+        "response": "unrelated answer"
+    })
+
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = [b"rag_cache:sess1:unrelated"]
+    mock_redis.get.return_value = cached_entry
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=query_vec), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        result = await get_semantic_cache("sess1", "query", embedder, threshold=0.85)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_returns_none_on_empty_keys():
+    embedder = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = []
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1, 0.2]), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        result = await get_semantic_cache("sess1", "query", embedder)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_skips_none_cached_data():
+    embedder = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = [b"rag_cache:sess1:key"]
+    mock_redis.get.return_value = None
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1, 0.2]), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        result = await get_semantic_cache("sess1", "query", embedder)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_semantic_cache_fails_silently_on_redis_error():
+    embedder = AsyncMock()
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1]), \
+         patch("app.services.semantic_cache.redis_client") as mock_redis:
+        mock_redis.keys.side_effect = Exception("redis down")
+        result = await get_semantic_cache("sess1", "query", embedder)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_set_semantic_cache_stores_entry():
+    embedder = AsyncMock()
+    mock_redis = AsyncMock()
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1, 0.2]), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        await set_semantic_cache("sess1", "my query", "my response", embedder)
+
+    mock_redis.setex.assert_called_once()
+    key, ttl, payload_str = mock_redis.setex.call_args[0]
+    assert "rag_cache:sess1:" in key
+    assert ttl == 7200
+    payload = json.loads(payload_str)
+    assert payload["query"]    == "my query"
+    assert payload["response"] == "my response"
+    assert payload["embedding"] == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_set_semantic_cache_skips_when_embed_fails():
+    embedder = AsyncMock()
+    mock_redis = AsyncMock()
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=None), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        await set_semantic_cache("sess1", "query", "response", embedder)
+
+    mock_redis.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_semantic_cache_fails_silently_on_redis_error():
+    embedder = AsyncMock()
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1]), \
+         patch("app.services.semantic_cache.redis_client") as mock_redis:
+        mock_redis.setex.side_effect = Exception("redis down")
+        await set_semantic_cache("sess1", "query", "response", embedder)
+
+
+@pytest.mark.asyncio
+async def test_set_semantic_cache_key_uses_truncated_query():
+    embedder = AsyncMock()
+    long_query = "a" * 200
+    mock_redis = AsyncMock()
+
+    with patch("app.services.semantic_cache._embed_with_retry", return_value=[0.1]), \
+         patch("app.services.semantic_cache.redis_client", mock_redis):
+        await set_semantic_cache("sess1", long_query, "resp", embedder)
+
+    key = mock_redis.setex.call_args[0][0]
+    assert len(key) < 200
+
+@pytest.mark.asyncio
+async def test_invalidate_session_cache_deletes_all_keys():
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = [b"rag_cache:sess1:q1", b"rag_cache:sess1:q2"]
+
+    with patch("app.services.semantic_cache.redis_client", mock_redis):
+        await invalidate_session_cache("sess1")
+
+    mock_redis.delete.assert_called_once_with(
+        b"rag_cache:sess1:q1", b"rag_cache:sess1:q2"
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalidate_session_cache_no_keys_skips_delete():
+    mock_redis = AsyncMock()
+    mock_redis.keys.return_value = []
+
+    with patch("app.services.semantic_cache.redis_client", mock_redis):
+        await invalidate_session_cache("sess1")
+
+    mock_redis.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_session_cache_fails_silently():
+    with patch("app.services.semantic_cache.redis_client") as mock_redis:
+        mock_redis.keys.side_effect = Exception("redis down")
+        await invalidate_session_cache("sess1")  # must not raise
