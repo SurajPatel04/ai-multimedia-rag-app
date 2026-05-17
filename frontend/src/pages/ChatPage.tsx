@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { ArrowDown, Copy, Check } from "lucide-react";
 import {
   IconArrowLeft,
+  IconBrandGithub,
   IconDots,
   IconFile,
   IconFileText,
@@ -444,6 +445,7 @@ export default function ChatPage() {
   const [open, setOpen] = useState(window.innerWidth >= 768);
   const [user, setUser] = useState<User | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isMobileProfileMenuOpen, setIsMobileProfileMenuOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Chat sessions state
@@ -473,6 +475,8 @@ export default function ChatPage() {
   const menuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileToggleRef = useRef<HTMLButtonElement>(null);
+  const mobileProfileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileProfileToggleRef = useRef<HTMLButtonElement>(null);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -505,6 +509,15 @@ export default function ChatPage() {
         !profileToggleRef.current.contains(e.target as Node)
       ) {
         setIsProfileMenuOpen(false);
+      }
+
+      if (
+        mobileProfileMenuRef.current &&
+        !mobileProfileMenuRef.current.contains(e.target as Node) &&
+        mobileProfileToggleRef.current &&
+        !mobileProfileToggleRef.current.contains(e.target as Node)
+      ) {
+        setIsMobileProfileMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -1169,11 +1182,57 @@ export default function ChatPage() {
             </span>
           }
           rightContent={
-            user ? (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 text-xs font-medium text-white border border-neutral-700">
-                {getInitials(user)}
-              </div>
-            ) : null
+            <div className="flex items-center gap-3">
+              <a
+                href="https://github.com/SurajPatel04"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-neutral-400 hover:text-white transition-colors"
+                title="GitHub Repository"
+              >
+                <IconBrandGithub className="h-5 w-5" />
+              </a>
+              {user ? (
+                <div className="relative">
+                  <button
+                    ref={mobileProfileToggleRef}
+                    onClick={() => setIsMobileProfileMenuOpen((prev) => !prev)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 text-xs font-medium text-white border border-neutral-700 hover:bg-neutral-700 transition"
+                    type="button"
+                  >
+                    {getInitials(user)}
+                  </button>
+                  <AnimatePresence>
+                    {isMobileProfileMenuOpen && (
+                      <motion.div
+                        ref={mobileProfileMenuRef}
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="absolute top-12 right-0 z-50 w-64 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-2xl"
+                      >
+                        <div className="mb-2 truncate px-2 py-1.5 text-sm font-medium text-neutral-300 text-left">
+                          {user.email}
+                        </div>
+                        <div className="h-px bg-neutral-800 mb-2"></div>
+                        <button
+                          className="flex w-full items-center justify-start gap-2 rounded-lg px-2 py-2 text-sm text-red-400 transition hover:bg-neutral-800 hover:text-red-300"
+                          onClick={() => {
+                            setIsMobileProfileMenuOpen(false);
+                            handleLogout();
+                          }}
+                          type="button"
+                        >
+                          <IconArrowLeft className="h-4 w-4 shrink-0" />
+                          <span>Logout</span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ) : null}
+            </div>
           }
         >
           <div className="flex flex-1 flex-col overflow-hidden">
@@ -1320,9 +1379,21 @@ export default function ChatPage() {
       <div className="flex min-w-0 flex-1 flex-col h-full bg-neutral-950 overflow-hidden">
         <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-neutral-800 px-4 md:px-6 bg-black z-10">
           <div>
-            <h1 className="text-sm font-semibold text-white">
+            <h1 className="text-sm font-semibold text-white truncate max-w-[500px]">
               {activeSession ? activeSession.title : "Chat"}
             </h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <a
+              href="https://github.com/SurajPatel04"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+              title="GitHub Repository"
+            >
+              <IconBrandGithub className="h-5 w-5" />
+              <span className="text-xs font-medium">GitHub</span>
+            </a>
           </div>
         </header>
 

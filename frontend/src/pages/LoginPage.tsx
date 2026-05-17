@@ -9,6 +9,7 @@ import { clearError } from "@/features/auth/authSlice";
 import { useEffect } from "react";
 import ragIcon from "@/assets/rag.png";
 import { showToast } from "@/lib/toast";
+import { IconBrandGithub } from "@tabler/icons-react";
 
 export default function LoginPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -38,6 +39,18 @@ export default function LoginPage() {
           <img src={ragIcon} alt="Logo" className="h-8 w-8 object-contain" />
           <span className="text-xl font-bold tracking-tight text-white">InsightFlow</span>
         </Link>
+      </div>
+      <div className="absolute top-8 right-8 md:right-12">
+        <a
+          href="https://github.com/SurajPatel04"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+          title="GitHub Repository"
+        >
+          <IconBrandGithub className="h-6 w-6" />
+          <span className="hidden sm:inline text-sm font-medium">GitHub</span>
+        </a>
       </div>
       <div className="w-full max-w-md">
         <SignupFormDemo

@@ -8,10 +8,34 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(),  tailwindcss()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('motion') || id.includes('framer-motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('@tabler/icons-react') || id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('react-syntax-highlighter') || id.includes('react-markdown')) {
+              return 'vendor-markdown';
+            }
+            return 'vendor';
+          }
+        },
+      },
     },
   },
 })

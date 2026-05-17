@@ -12,7 +12,17 @@ export default function LandingPage() {
             <img src={ragIcon} alt="Logo" className="h-8 w-8 object-contain" />
             <span className="text-xl font-bold tracking-tight">InsightFlow</span>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <a
+              href="https://github.com/SurajPatel04"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+              title="GitHub Repository"
+            >
+              <IconBrandGithub className="h-6 w-6" />
+              <span className="hidden sm:inline text-sm font-medium">GitHub</span>
+            </a>
             <Link to="/signup" className="rounded-full bg-white px-6 py-2.5 text-sm font-bold text-black hover:bg-neutral-200 transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]">Get Started</Link>
           </div>
         </div>
