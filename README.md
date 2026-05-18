@@ -6,6 +6,7 @@ InsightFlow is a full-stack, production-grade AI Retrieval-Augmented Generation 
 
 ## Table of Contents
 
+- [System Workflow Diagram](#-system-workflow-diagram)
 - [Key Features](#-key-features)
 - [Architecture & Data Flow](#-architecture--data-flow)
   - [Upload & Ingestion Pipeline](#1-upload--ingestion-pipeline)
@@ -22,6 +23,12 @@ InsightFlow is a full-stack, production-grade AI Retrieval-Augmented Generation 
   - [Method 2: Docker Compose](#method-2-running-with-docker-compose-production--containerized)
 - [Environment Variables](#-environment-variables)
 - [Running Tests](#-running-tests)
+
+---
+
+## 📊 System Workflow Diagram
+
+![RAG System Workflow Architecture](RAG_System_Workflow.png)
 
 ---
 

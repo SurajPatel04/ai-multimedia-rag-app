@@ -1,6 +1,6 @@
 import tiktoken
 from langchain_core.messages import HumanMessage,  AIMessage
-enc = tiktoken.encoding_for_model("gpt-4o-mini")
+enc = tiktoken.get_encoding("o200k_base")
 def trim_by_tokens(text: str, max_tokens: int):
 
     tokens = enc.encode(text)
