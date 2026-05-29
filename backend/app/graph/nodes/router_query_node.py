@@ -93,10 +93,9 @@ RULES
    - Use "direct_llm" only when the query is clearly conversational and unrelated to files.
 
 5. extra_query
-   - For "vector_search", extra_query must be 2–3 rephrased queries that:
-     - Expand acronyms.
-     - Use alternative terminology.
-     - Are NOT closely related to each other.
+   - If the user asks where a specific entity, keyword, or concept is mentioned (e.g., "where is google mentioned?", "when is google mentioned in the audio", "find mentions of X"), set extra_query to ONLY contain the exact keywords or entities they are looking for (e.g., ["google", "Google"]). DO NOT generate full-sentence queries like "when is google mentioned".
+   - If the user explicitly asks for an "exact word", "exact phrase", or mentions they want an exact match, set extra_query to ONLY the exact text they want to match.
+   - Otherwise, for "vector_search", extra_query must be 2–3 rephrased queries that expand acronyms and use alternative terminology.
    - For "mongo_db_retrieve" and "direct_llm", set extra_query to null.
 
 6. Formatting

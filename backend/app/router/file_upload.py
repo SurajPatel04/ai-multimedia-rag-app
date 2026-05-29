@@ -19,7 +19,12 @@ ALLOWED_TYPES = [
     "audio/mpeg",
     "audio/mp3",
     "video/mp4",
-    "audio/wav"
+    "audio/wav",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv"
 ]
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB

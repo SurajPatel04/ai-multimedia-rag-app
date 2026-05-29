@@ -1,6 +1,6 @@
 # InsightFlow — Backend API & RAG Engine
 
-InsightFlow's backend is a production-grade FastAPI application powering the AI Retrieval-Augmented Generation (RAG) platform. It manages multi-modal file ingestion (PDFs, audio, video), advanced LangGraph agentic workflows, FAISS vector indexing, and real-time Server-Sent Events (SSE) streaming.
+InsightFlow's backend is a production-grade FastAPI application powering the AI Retrieval-Augmented Generation (RAG) platform. It manages multi-modal file ingestion (PDFs, Word, Excel, CSVs, audio, video), advanced LangGraph agentic workflows, FAISS vector indexing, and real-time Server-Sent Events (SSE) streaming.
 
 ---
 
@@ -28,7 +28,7 @@ InsightFlow's backend is a production-grade FastAPI application powering the AI 
 ### Backend (FastAPI + LangGraph + MongoDB)
 
 - **Agentic RAG Workflow (LangGraph):** Orchestrates multi-turn conversation, context retrieval, and background session summarization for long-context retention.
-- **Multi-Modal File Processing:** Supports PDF documents, audio (MP3, WAV, MPEG), and video (MP4).
+- **Multi-Modal File Processing:** Supports PDF, Word (.docx), Excel (.xlsx), CSV, audio (MP3, WAV, MPEG), and video (MP4).
 - **Cost-Efficient Two-Phase Ingestion:** Files are first stored temporarily and only promoted to the vector store after explicit user confirmation, preventing wasteful embedding of cancelled uploads.
 - **Advanced AI & Vector Search:**
   - **Google Gemini & OpenAI** for high-quality vector embeddings and intelligent query completions.
@@ -51,7 +51,7 @@ When a user selects and uploads a file, the backend immediately:
 
 1. Stores the file in **Supabase Storage**.
 2. Processes the file content:
-   - **PDF:** Text is extracted and split into chunks.
+   - **PDF/Word/Excel/CSV:** Text is extracted and split into chunks.
    - **Audio/Video:** The file is sent to **Deepgram** for transcription. The resulting transcript is broken into utterances, each carrying a precise `start` and `end` timestamp (e.g., `[0:05 - 1:52]`). These timestamped utterances are then chunked for retrieval.
 3. Saves all raw chunks — along with metadata such as file URL, file name, and for audio/video the timestamps per chunk — into **MongoDB as temporary documents**.
 4. Returns a `temp_id` to the frontend.
@@ -125,7 +125,7 @@ When a user sends a chat message:
 The backend streams the LLM response back to the client in real time using **Server-Sent Events (SSE)**. Each streamed event can carry:
 
 - **Response tokens** — displayed as they arrive.
-- **Document citations** — chunk references for PDF sources.
+- **Document citations** — chunk references for PDF, Word, and Spreadsheet sources.
 - **Media citations** — timestamp ranges (e.g., `[0:05 - 1:52]`) for audio/video sources, rendered on the frontend as clickable pills that seek the media player to that exact moment.
 - **Token usage & cost** — live stats computed server-side as the stream progresses.
 

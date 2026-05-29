@@ -72,8 +72,15 @@ async def context_builder_node(state: State):
 
         {"Rules:" if has_context else ""}
         {"- Answer only from the given context." if has_context else ""}
-        {"- If the context has timestamps (e.g. [file.mp4 | 02:15 – 02:45]), always reference them in your answer so the user knows where to look." if has_context else ""}
+        {"- Read the context carefully before answering. If the user asks for a 'heading', ensure you are referencing the actual page where the heading exists, not a page where it is just mentioned in a list." if has_context else ""}
+        {"- CRITICAL: When using information from the context, you MUST cite the source using the EXACT bracket format provided in the context blocks, and include a short exact quote from the text for highlighting." if has_context else ""}
+        {"  Examples of correct citation formats:" if has_context else ""}
+        {"    * For PDFs/Word/Excel: [document.pdf | Page 2 | \"exact short quote from text\"]" if has_context else ""}
+        {"    * For Audio/Video: [media.mp4 | 02:15 - 02:45]" if has_context else ""}
+        {"  Do not alter the brackets or the spacing." if has_context else ""}
         {"- If the context contains multiple files, ensure your answer addresses or summarizes each file explicitly." if has_context else ""}
+        {"- When the context is from a CSV or Excel file, or when presenting tabular data, ALWAYS format your response using a clean Markdown table. if needed" if has_context else ""}
+        {"- If the user asks for a comparison, ALWAYS present the comparison in a Markdown table." if has_context else ""}
         {"- Be concise and clear." if has_context else ""}
 
         {f"Context:\n{context_value}" if has_context else
@@ -93,6 +100,8 @@ async def context_builder_node(state: State):
         *state.chat_history,
         HumanMessage(content=user_prompt),
     ]
+
+    # print("LLM Message ----------------", llm_messages)
 
     updated_chat_history = [
         *state.chat_history,

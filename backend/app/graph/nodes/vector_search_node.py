@@ -39,9 +39,16 @@ async def vector_search_node(state: State):
         meta  = r.get("metadata", {})
         start = meta.get("start")
         end   = meta.get("end")
+        page  = meta.get("page")
         fname = meta.get("file_name", "")
+        
         if start is not None and end is not None:
             return f"[{fname} | {format_time(start)} – {format_time(end)}]\n{r['text']}"
+        elif page is not None:
+            return f"[{fname} | Page {page}]\n{r['text']}"
+            
+        if fname:
+            return f"[{fname}]\n{r['text']}"
         return r["text"]
 
     context = "\n\n---\n\n".join(format_chunk(r) for r in unique_results.values())
@@ -62,7 +69,12 @@ async def vector_search_node(state: State):
     media_refs = sorted(media_refs, key=lambda x: x["start"]) if media_refs else None
 
     # print(f"  [vector] context length: {len(context)}")
-    # print(f"  [vector] context preview: {context[:150]}")
+    # print(f"  [vector] context preview: \n{context}\n")
+    
+    # print("  [vector] RAW METADATA FOR EACH CHUNK:")
+    # for i, r in enumerate(unique_results.values()):
+    #     print(f"    Chunk {i + 1} Metadata: {r.get('metadata', {})}")
+
     # print(f"  [vector] media_refs: {len(media_refs) if media_refs else 0} timestamp(s)")
 
     return {

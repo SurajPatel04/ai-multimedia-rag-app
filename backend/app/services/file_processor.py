@@ -1,6 +1,8 @@
 import os
 import uuid
 from app.helpers.pdf_reader import process_pdf
+from app.helpers.word_reader import process_word
+from app.helpers.excel_csv_reader import process_excel_csv
 from app.helpers.whisper_transcriber import transcribe_audio
 from app.helpers.vector_db import store_vectors, delete_session_vectors
 from app.utils.embeddings import get_embeddings
@@ -12,6 +14,8 @@ embeddings = get_embeddings()
 
 AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "flac"}
 PDF_EXTENSIONS = {"pdf"}
+WORD_EXTENSIONS = {"doc", "docx"}
+EXCEL_CSV_EXTENSIONS = {"xls", "xlsx", "csv"}
 
 
 def generate_temp_id() -> str:
@@ -31,6 +35,12 @@ def process_file(temp_id: str, file_path: str) -> dict:
 
     if ext in PDF_EXTENSIONS:
         return _process_pdf_file(temp_id, file_path)
+
+    elif ext in WORD_EXTENSIONS:
+        return _process_word_file(temp_id, file_path)
+
+    elif ext in EXCEL_CSV_EXTENSIONS:
+        return _process_excel_csv_file(temp_id, file_path)
 
     elif ext in AUDIO_EXTENSIONS or ext in VIDEO_EXTENSIONS:
         return _process_audio_video_file(temp_id, file_path)
@@ -62,6 +72,66 @@ def _process_pdf_file(temp_id: str, file_path: str) -> dict:
     return {
         "temp_id": temp_id,
         "file_type": "pdf",
+        "full_text": " ".join(c["text"] for c in chunks),
+        "utterances": [],
+        "chunks": chunks,
+        "embedded": False,
+        "status": "ready"
+    }
+
+
+def _process_word_file(temp_id: str, file_path: str) -> dict:
+    langchain_chunks = process_word(file_path)
+
+    chunks = [
+        {
+            "chunk_index": i,
+            "text": chunk.page_content,
+            "metadata": {
+                "page": chunk.metadata.get("page"),
+                "total_pages": chunk.metadata.get("total_pages"),
+                "chunk_method": chunk.metadata.get("chunk_method"),
+                "char_count": chunk.metadata.get("char_count"),
+                "source": chunk.metadata.get("source"),
+            }
+        }
+        for i, chunk in enumerate(langchain_chunks)
+    ]
+
+    return {
+        "temp_id": temp_id,
+        "file_type": "word",
+        "full_text": " ".join(c["text"] for c in chunks),
+        "utterances": [],
+        "chunks": chunks,
+        "embedded": False,
+        "status": "ready"
+    }
+
+
+def _process_excel_csv_file(temp_id: str, file_path: str) -> dict:
+    langchain_chunks = process_excel_csv(file_path)
+
+    chunks = [
+        {
+            "chunk_index": i,
+            "text": chunk.page_content,
+            "metadata": {
+                "page": chunk.metadata.get("page"),
+                "total_pages": chunk.metadata.get("total_pages"),
+                "chunk_method": chunk.metadata.get("chunk_method"),
+                "char_count": chunk.metadata.get("char_count"),
+                "source": chunk.metadata.get("source"),
+            }
+        }
+        for i, chunk in enumerate(langchain_chunks)
+    ]
+    
+    ext = file_path.rsplit(".", 1)[-1].lower()
+
+    return {
+        "temp_id": temp_id,
+        "file_type": "csv" if ext == "csv" else "excel",
         "full_text": " ".join(c["text"] for c in chunks),
         "utterances": [],
         "chunks": chunks,
