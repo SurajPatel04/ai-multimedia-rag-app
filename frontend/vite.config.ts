@@ -15,7 +15,7 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 2500,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -32,10 +32,27 @@ export default defineConfig({
             if (id.includes('react-syntax-highlighter') || id.includes('react-markdown')) {
               return 'vendor-markdown';
             }
+            if (id.includes('pdfjs-dist') || id.includes('@react-pdf-viewer')) {
+              return 'vendor-pdfjs';
+            }
             return 'vendor';
           }
         },
       },
+      onwarn(warning, warn) {
+        if (warning.code === 'EVAL' && warning.id?.includes('pdfjs-dist')) {
+          return;
+        }
+        warn(warning);
+      },
     },
+    rolldownOptions: {
+      onwarn(warning: any, warn: any) {
+        if (warning.code === 'EVAL' && warning.id?.includes('pdfjs-dist')) {
+          return;
+        }
+        warn(warning);
+      },
+    }
   },
 })

@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useRef, useState, Fragment } from "react
 import { useSearchParams, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ragIcon from "@/assets/rag.png";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowDown, Copy, Check } from "lucide-react";
+import { ArrowDown, Copy, Check, FileVideo, FileText, FileSpreadsheet, File } from "lucide-react";
 import {
   IconArrowLeft,
   IconBrandGithub,
@@ -41,6 +42,7 @@ import {
 } from "@/services/chatService";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { showToast } from "@/lib/toast";
+import { PdfViewerModal } from "@/components/PdfViewerModal";
 
 
 
@@ -61,16 +63,13 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
 
   if (event) {
     const button = event.currentTarget as HTMLElement;
-    // 1. Target the player in the immediate message container first
     const container = button.closest(".chat-message-group");
     if (container) {
       mediaElement = container.querySelector("video, audio") as HTMLMediaElement;
     }
 
-    // 2. If not found in current message, find the nearest player ABOVE this button
     if (!mediaElement) {
       const allPlayers = Array.from(document.querySelectorAll("video, audio")) as HTMLMediaElement[];
-      // Filter players that are physically above the button in the DOM
       const previousPlayers = allPlayers.filter(p =>
         p.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       );
@@ -80,7 +79,6 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
     }
   }
 
-  // 3. Fallback to the very first player if no previous ones found
   if (!mediaElement) {
     mediaElement = document.querySelector("video, audio") as HTMLMediaElement;
   }
@@ -109,18 +107,21 @@ const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React
   activeTimeUpdateRef = { element: mediaElement, listener };
 };
 
-const renderTextWithEnhancements = (text: string, fileNames: string[] = []) => {
-  // 1. Matches timestamps: [00:00 - 00:00] or 00:00 - 00:00
+const renderTextWithEnhancements = (text: string, fileNames: string[] = [], onPdfClick?: (name: string, page: number, query?: string) => void) => {
+  // Matches timestamps: [00:00 - 00:00] or 00:00 - 00:00
   const timestampRegex = /(?:\[(?:.*?\|\s*)?)?\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b(?:\])?/g;
 
-  // 2. Matches known filenames exactly, fallback to common regex
+  // Document Page Match: [filename.pdf | Page 2] or [filename.docx | Page 2 | "quote"]
+  const pdfPageRegex = /\[([^\|\]]+\.(?:pdf|docx|doc|xlsx|xls|csv))\s*\|\s*Page\s*(\d+)(?:\s*\|\s*["']?(.*?)["']?)?\]/gi;
+
+  // Matches known filenames exactly, fallback to common regex
   const escapedNames = fileNames
     .map(name => name.trim())
     .filter(Boolean)
     .sort((a, b) => b.length - a.length)
     .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
-  const knownFilesRegex = escapedNames.length > 0 
+  const knownFilesRegex = escapedNames.length > 0
     ? new RegExp(`(?<=^|\\s|["'\\[\\(\\{])(${escapedNames.join("|")})(?=$|\\s|["'\\]\\)\\},:;.!?])`, 'gi')
     : null;
 
@@ -156,6 +157,46 @@ const renderTextWithEnhancements = (text: string, fileNames: string[] = []) => {
           onClick={(e) => handlePlayMedia(startSeconds, endSeconds, e)}
         >
           <span className="mr-1 text-[9px]">▶</span> {timeLabel}
+        </button>
+      )
+    });
+  }
+
+  // Find PDF Pages
+  let pMatch;
+  while ((pMatch = pdfPageRegex.exec(text)) !== null) {
+    if (matches.some(m => pMatch!.index >= m.index && pMatch!.index < m.index + m.length)) continue;
+
+    const fileName = pMatch[1].trim();
+    const pageNum = parseInt(pMatch[2], 10);
+    const exactQuote = pMatch[3]?.trim();
+
+    // Extract preceding text as search query fallback
+    const snippetBefore = text.substring(Math.max(0, pMatch.index - 150), pMatch.index);
+    let fallbackQuery = snippetBefore
+      .split(/(?:\n|\.\s|\?\s|\!\s)/) // split by newlines or sentence endings
+      .pop()?.trim()
+      .replace(/^["'\s]+|["'\s]+$/g, '') // Remove trailing/leading quotes
+      .replace(/[*_~`]/g, "") || undefined;
+
+    // If fallback is too long, trim to last 8 words
+    if (fallbackQuery && fallbackQuery.split(' ').length > 8) {
+      fallbackQuery = fallbackQuery.split(' ').slice(-8).join(' ');
+    }
+
+    const searchQuery = exactQuote || fallbackQuery;
+
+    matches.push({
+      index: pMatch.index,
+      length: pMatch[0].length,
+      content: (
+        <button
+          key={`pdf-${pMatch.index}`}
+          type="button"
+          className="mx-1 inline-flex items-center rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
+          onClick={() => onPdfClick && onPdfClick(fileName, pageNum, searchQuery)}
+        >
+          <IconFileText className="mr-1 h-3 w-3" /> {fileName} | Page {pageNum}
         </button>
       )
     });
@@ -220,12 +261,12 @@ const renderTextWithEnhancements = (text: string, fileNames: string[] = []) => {
   return parts.length === 0 ? text : parts;
 };
 
-const processMarkdownChildren = (children: React.ReactNode, fileNames: string[] = []): React.ReactNode => {
+const processMarkdownChildren = (children: React.ReactNode, fileNames: string[] = [], onPdfClick?: (name: string, page: number, query?: string) => void): React.ReactNode => {
   if (typeof children === "string") {
-    return renderTextWithEnhancements(children, fileNames);
+    return renderTextWithEnhancements(children, fileNames, onPdfClick);
   }
   if (Array.isArray(children)) {
-    return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child, fileNames)}</Fragment>);
+    return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child, fileNames, onPdfClick)}</Fragment>);
   }
   return children;
 };
@@ -491,6 +532,25 @@ export default function ChatPage() {
     message: "",
     onConfirm: () => { },
   });
+
+  const [pdfToView, setPdfToView] = useState<{ url: string; name: string; initialPage?: number; searchQuery?: string } | null>(null);
+
+  const handlePdfClick = useCallback((fileName: string, page: number, query?: string) => {
+    // Find the file URL from activeMessages
+    const ref = activeMessages
+      .flatMap(m => m.file_references)
+      .find(r => r.file_name.toLowerCase() === fileName.toLowerCase());
+
+    if (ref && ref.file_url) {
+      let mediaUrl = ref.file_url.startsWith("http") || ref.file_url.startsWith("blob:")
+        ? ref.file_url
+        : `${import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || "http://localhost:8000"}${ref.file_url.startsWith("/") ? "" : "/"}${ref.file_url}`;
+
+      setPdfToView({ url: mediaUrl, name: ref.file_name, initialPage: page, searchQuery: query });
+    } else {
+      showToast.error(`Could not find the file URL for ${fileName}`);
+    }
+  }, [activeMessages]);
 
   const showConfirmation = (config: Omit<typeof confirmModal, "isOpen">) => {
     setConfirmModal({ ...config, isOpen: true });
@@ -830,10 +890,10 @@ export default function ChatPage() {
       for (const file of newFiles) {
         const isTypeAllowed = ALLOWED_TYPES.some((type) =>
           file.type.startsWith(type)
-        );
+        ) || /\.(doc|docx|xls|xlsx|csv)$/i.test(file.name);
 
         if (!isTypeAllowed) {
-          showToast.error(`File type not allowed: ${file.name}. Please upload PDF, Video, or Audio.`);
+          showToast.error(`File type not allowed: ${file.name}. Please upload PDF, Word, Excel, CSV, Video, or Audio.`);
           continue;
         }
 
@@ -1163,12 +1223,14 @@ export default function ChatPage() {
   const getFileInfo = (file: File) => {
     const type = file.type;
     const name = file.name.toLowerCase();
-    if (type.startsWith("audio/")) return { icon: <IconMusic className="h-4 w-4" />, color: "bg-neutral-800", label: "Audio" };
-    if (type.startsWith("video/")) return { icon: <IconVideo className="h-4 w-4" />, color: "bg-neutral-800", label: "Video" };
-    if (type === "application/pdf") return { icon: <IconFileText className="h-4 w-4" />, color: "bg-neutral-800", label: "PDF" };
+    if (type.startsWith("audio/")) return { icon: <IconMusic className="h-4 w-4 text-purple-400" />, color: "bg-neutral-800", label: "Audio" };
+    if (type.startsWith("video/")) return { icon: <FileVideo className="h-4 w-4 text-orange-400" />, color: "bg-neutral-800", label: "Video" };
+    if (type === "application/pdf") return { icon: <FileText className="h-4 w-4 text-red-400" />, color: "bg-neutral-800", label: "PDF" };
     if (type.includes("spreadsheet") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv"))
-      return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "Spreadsheet" };
-    return { icon: <IconFile className="h-4 w-4" />, color: "bg-neutral-800", label: "File" };
+      return { icon: <FileSpreadsheet className="h-4 w-4 text-green-400" />, color: "bg-neutral-800", label: "Spreadsheet" };
+    if (type.includes("wordprocessingml") || type.includes("msword") || name.endsWith(".docx") || name.endsWith(".doc"))
+      return { icon: <FileText className="h-4 w-4 text-blue-400" />, color: "bg-neutral-800", label: "Word Document" };
+    return { icon: <File className="h-4 w-4 text-neutral-400" />, color: "bg-neutral-800", label: "Document" };
   };
 
   return (
@@ -1428,7 +1490,7 @@ export default function ChatPage() {
                     {[
                       {
                         title: "Document RAG",
-                        desc: "Analyze PDFs for key information",
+                        desc: "Analyze PDFs, Word, Excel, and CSVs",
                         icon: <IconFile className="h-5 w-5 text-neutral-400" />,
                         bg: "hover:border-neutral-700"
                       },
@@ -1536,20 +1598,30 @@ export default function ChatPage() {
                               );
                             }
 
+                            const isPdf = ref.content_type?.toLowerCase() === "application/pdf" || ref.file_type?.toLowerCase() === "pdf" || fileName.endsWith(".pdf");
+                            const isWord = fileName.endsWith(".docx") || fileName.endsWith(".doc");
+                            const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || fileName.endsWith(".csv");
+                            const isDocument = isPdf || isWord || isExcel;
+
                             return (
                               <div
                                 key={ref.document_id || idx}
-                                className="flex w-fit max-w-full items-center gap-3 rounded-2xl border border-neutral-800 bg-black p-2 pr-4 shadow-sm"
+                                onClick={() => {
+                                  if (isDocument && mediaUrl) {
+                                    setPdfToView({ url: mediaUrl, name: ref.file_name });
+                                  }
+                                }}
+                                className={`flex w-fit max-w-full items-center gap-3 rounded-2xl border border-neutral-800 bg-black p-2 pr-4 shadow-sm ${isDocument && mediaUrl ? "cursor-pointer hover:bg-neutral-900 transition-colors" : ""}`}
                               >
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white shadow-inner">
-                                  <IconFile className="h-6 w-6" />
+                                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-inner ${isPdf ? 'bg-red-500/20' : isWord ? 'bg-blue-500/20' : 'bg-green-500/20'}`}>
+                                  {isPdf ? <FileText className="h-6 w-6 text-red-500" /> : isWord ? <FileText className="h-6 w-6 text-blue-500" /> : <FileSpreadsheet className="h-6 w-6 text-green-500" />}
                                 </div>
                                 <div className="flex flex-col overflow-hidden">
                                   <span className="truncate text-sm font-semibold text-white">
                                     {ref.file_name}
                                   </span>
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                                    {ref.file_type || "Document"}
+                                    {isWord ? "Word Document" : isExcel ? "Excel Spreadsheet" : isPdf ? "PDF Document" : "Document"}
                                   </span>
                                 </div>
                               </div>
@@ -1578,12 +1650,12 @@ export default function ChatPage() {
                             {/* Message content — ReactMarkdown */}
                             <ReactMarkdown
                               components={{
-                                p: ({ children }) => <p className="mb-3 last:mb-0 text-sm leading-relaxed text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</p>,
-                                ul: ({ children }) => <ul className="mb-3 last:mb-0 list-disc space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</ul>,
-                                ol: ({ children }) => <ol className="mb-3 last:mb-0 list-decimal space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames)}</ol>,
-                                li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children, knownFileNames)}</li>,
-                                strong: ({ children }) => <strong className="font-bold text-white">{processMarkdownChildren(children, knownFileNames)}</strong>,
-                                em: ({ children }) => <em className="italic text-neutral-400">{processMarkdownChildren(children, knownFileNames)}</em>,
+                                p: ({ children }) => <p className="mb-3 last:mb-0 text-sm leading-relaxed text-neutral-300">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</p>,
+                                ul: ({ children }) => <ul className="mb-3 last:mb-0 list-disc space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</ul>,
+                                ol: ({ children }) => <ol className="mb-3 last:mb-0 list-decimal space-y-1.5 pl-5 text-sm text-neutral-300">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</ol>,
+                                li: ({ children }) => <li className="leading-relaxed">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</li>,
+                                strong: ({ children }) => <strong className="font-bold text-white">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</strong>,
+                                em: ({ children }) => <em className="italic text-neutral-400">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</em>,
                                 code: ({ className, children, ...props }) => {
                                   const match = /language-(\w+)/.exec(className || "");
                                   return match ? (
@@ -1597,7 +1669,20 @@ export default function ChatPage() {
                                 h1: ({ children }) => <h1 className="mb-4 mt-6 text-xl font-black uppercase tracking-tighter text-white">{children}</h1>,
                                 h2: ({ children }) => <h2 className="mb-3 mt-5 text-lg font-black uppercase tracking-tight text-white">{children}</h2>,
                                 h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-neutral-200">{children}</h3>,
+                                table: ({ children }) => (
+                                  <div className="my-4 w-full overflow-x-auto rounded-xl border border-neutral-800 bg-[#0a0a0a] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-neutral-700">
+                                    <table className="w-full text-left text-sm text-neutral-300 whitespace-nowrap">
+                                      {children}
+                                    </table>
+                                  </div>
+                                ),
+                                thead: ({ children }) => <thead className="bg-neutral-900 border-b border-neutral-800 text-xs uppercase text-neutral-400">{children}</thead>,
+                                tbody: ({ children }) => <tbody className="divide-y divide-neutral-800">{children}</tbody>,
+                                tr: ({ children }) => <tr className="hover:bg-neutral-800/50 transition-colors">{children}</tr>,
+                                th: ({ children }) => <th className="px-4 py-3 font-medium text-white tracking-wider">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</th>,
+                                td: ({ children }) => <td className="px-4 py-3">{processMarkdownChildren(children, knownFileNames, handlePdfClick)}</td>,
                               }}
+                              remarkPlugins={[remarkGfm]}
                             >
                               {message.content}
                             </ReactMarkdown>
@@ -1660,7 +1745,7 @@ export default function ChatPage() {
                   <IconPaperclip className="h-5 w-5" />
                   <input
                     ref={fileInputRef}
-                    accept="application/pdf,video/*,audio/*"
+                    accept="application/pdf,video/*,audio/*,.doc,.docx,.xls,.xlsx,.csv"
                     className="sr-only"
                     multiple
                     onChange={handleFileChange}
@@ -1739,6 +1824,16 @@ export default function ChatPage() {
         confirmText={confirmModal.confirmText}
         isDanger={confirmModal.isDanger}
       />
+
+      {pdfToView && (
+        <PdfViewerModal
+          url={pdfToView.url}
+          fileName={pdfToView.name}
+          initialPage={pdfToView.initialPage}
+          searchQuery={pdfToView.searchQuery}
+          onClose={() => setPdfToView(null)}
+        />
+      )}
     </section>
   );
 }

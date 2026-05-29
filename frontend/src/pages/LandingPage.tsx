@@ -66,7 +66,7 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12 relative">
               <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-neutral-800 to-transparent -z-10 hidden md:block" />
               {[
-                { step: "01", icon: <IconCloudUpload className="h-8 w-8 text-white" />, title: "Upload Data", desc: "Drop your PDFs, video recordings, or audio files into the platform." },
+                { step: "01", icon: <IconCloudUpload className="h-8 w-8 text-white" />, title: "Upload Data", desc: "Drop your PDFs, Word/Excel documents, CSVs, video, or audio files into the platform." },
                 { step: "02", icon: <IconDatabase className="h-8 w-8 text-white" />, title: "AI Indexing", desc: "Our RAG pipeline extracts context and builds a vector-based memory." },
                 { step: "03", icon: <IconMessage2 className="h-8 w-8 text-white" />, title: "Interact", desc: "Ask questions, generate summaries, and extract citations instantly." }
               ].map((item, i) => (
