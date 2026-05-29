@@ -5,6 +5,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libreoffice-core \
     libreoffice-writer \
+    libxml2 \
+    default-jre-headless \
+    fonts-liberation \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
