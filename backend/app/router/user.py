@@ -1,6 +1,7 @@
 from fastapi import APIRouter, status, HTTPException, Depends
 from app.models import User
 from app.dependencies.auth import get_current_user
+from beanie import PydanticObjectId
 
 
 router = APIRouter(
@@ -12,7 +13,7 @@ router = APIRouter(
 @router.get("/me",status_code=status.HTTP_200_OK)
 async def get_me(current_user: str = Depends(get_current_user)):
     try:
-        user = await User.get(current_user)
+        user = await User.get(PydanticObjectId(current_user))
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

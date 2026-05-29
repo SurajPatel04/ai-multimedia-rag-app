@@ -107,7 +107,7 @@ async def test_get_session_history_returns_multiple_messages(authenticated_clien
 
 async def test_update_session_title_success(authenticated_client, registered_user):
     user = await User.find_one({"email": registered_user["email"]})
-    session_id = "test_session_update_001"
+    session_id = f"test_session_update_{uuid.uuid4().hex}"
     await ChatSession(session_id=session_id, user_id=user.id, title="Old Title").insert()
 
     res = await authenticated_client.patch(
