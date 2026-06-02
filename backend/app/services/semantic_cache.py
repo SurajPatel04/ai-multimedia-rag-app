@@ -36,7 +36,7 @@ async def _embed_with_retry(embedder, text: str, max_retries: int = 3) -> list |
             return None
 
 
-async def get_semantic_cache( session_id: str, query: str, embedder, target_files: list = None, threshold: float = 0.90 ):
+async def get_semantic_cache( session_id: str, query: str, embedder, target_files: list = None, threshold: float = 0.95 ):
     try:
         query_embedding = await _embed_with_retry(embedder, query)
         if not query_embedding:
