@@ -25,6 +25,7 @@ import {
   IconTrash,
   IconVideo,
   IconX,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-vanish-input";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
@@ -43,7 +44,10 @@ import {
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { showToast } from "@/lib/toast";
 import { PdfViewerModal } from "@/components/PdfViewerModal";
-
+import { handlePlayMedia, processMarkdownChildren } from "@/components/chat/MarkdownUtils";
+import { CodeBlock } from "@/components/chat/CodeBlock";
+import { MessageActionToolbar } from "@/components/chat/MessageActionToolbar";
+import { ChatSessionItem } from "@/components/chat/ChatSessionItem";
 
 
 
@@ -55,432 +59,15 @@ const placeholders = [
   "What should we build next?",
 ];
 
-// Global Media Player
-let activeTimeUpdateRef: { element: HTMLMediaElement; listener: () => void } | null = null;
 
-const handlePlayMedia = (startSeconds: number, endSeconds: number, event?: React.MouseEvent) => {
-  let mediaElement: HTMLMediaElement | null = null;
 
-  if (event) {
-    const button = event.currentTarget as HTMLElement;
-    const container = button.closest(".chat-message-group");
-    if (container) {
-      mediaElement = container.querySelector("video, audio") as HTMLMediaElement;
-    }
-
-    if (!mediaElement) {
-      const allPlayers = Array.from(document.querySelectorAll("video, audio")) as HTMLMediaElement[];
-      const previousPlayers = allPlayers.filter(p =>
-        p.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
-      );
-      if (previousPlayers.length > 0) {
-        mediaElement = previousPlayers[previousPlayers.length - 1]; // Pick the closest one above
-      }
-    }
-  }
-
-  if (!mediaElement) {
-    mediaElement = document.querySelector("video, audio") as HTMLMediaElement;
-  }
-
-  if (!mediaElement) return;
-
-  // Scroll to the player so the user can see it
-  mediaElement.scrollIntoView({ behavior: "smooth", block: "center" });
-
-  if (activeTimeUpdateRef) {
-    activeTimeUpdateRef.element.removeEventListener("timeupdate", activeTimeUpdateRef.listener);
-  }
-
-  mediaElement.currentTime = startSeconds;
-  mediaElement.play().catch(e => console.error("Play failed:", e));
-
-  const listener = () => {
-    if (mediaElement.currentTime >= endSeconds) {
-      mediaElement.pause();
-      mediaElement.removeEventListener("timeupdate", listener);
-      activeTimeUpdateRef = null;
-    }
-  };
-
-  mediaElement.addEventListener("timeupdate", listener);
-  activeTimeUpdateRef = { element: mediaElement, listener };
-};
-
-const renderTextWithEnhancements = (text: string, fileNames: string[] = [], onPdfClick?: (name: string, page: number, query?: string) => void) => {
-  // Matches timestamps: [00:00 - 00:00] or 00:00 - 00:00
-  const timestampRegex = /(?:\[(?:.*?\|\s*)?)?\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–]\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b(?:\])?/g;
-
-  // Document Page Match: [filename.pdf | Page 2] or [filename.docx | Page 2 | "quote"]
-  const pdfPageRegex = /\[([^\|\]]+\.(?:pdf|docx|doc|xlsx|xls|csv))\s*\|\s*Page\s*(\d+)(?:\s*\|\s*["']?(.*?)["']?)?\]/gi;
-
-  // Matches known filenames exactly, fallback to common regex
-  const escapedNames = fileNames
-    .map(name => name.trim())
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length)
-    .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-
-  const knownFilesRegex = escapedNames.length > 0
-    ? new RegExp(`(?<=^|\\s|["'\\[\\(\\{])(${escapedNames.join("|")})(?=$|\\s|["'\\]\\)\\},:;.!?])`, 'gi')
-    : null;
-
-  const fallbackFileRegex = /\b([\w-]+\.(?:pdf|mp4|mp3|wav|mov|avi|doc|docx|txt))\b/gi;
-
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  const matches: { index: number; length: number; content: React.ReactNode }[] = [];
-
-  // Find Timestamps
-  let tMatch;
-  while ((tMatch = timestampRegex.exec(text)) !== null) {
-    const startHours = tMatch[1] ? parseInt(tMatch[1], 10) : 0;
-    const startMins = parseInt(tMatch[2], 10);
-    const startSecs = parseInt(tMatch[3], 10);
-    const startSeconds = startHours * 3600 + startMins * 60 + startSecs;
-
-    const endHours = tMatch[4] ? parseInt(tMatch[4], 10) : 0;
-    const endMins = parseInt(tMatch[5], 10);
-    const endSecs = parseInt(tMatch[6], 10);
-    const endSeconds = endHours * 3600 + endMins * 60 + endSecs;
-
-    const timeLabel = `[${tMatch[1] ? tMatch[1] + ":" : ""}${tMatch[2]}:${tMatch[3]} - ${tMatch[4] ? tMatch[4] + ":" : ""}${tMatch[5]}:${tMatch[6]}]`;
-
-    matches.push({
-      index: tMatch.index,
-      length: tMatch[0].length,
-      content: (
-        <button
-          key={`ts-${tMatch.index}`}
-          type="button"
-          className="mx-1 inline-flex items-center rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
-          onClick={(e) => handlePlayMedia(startSeconds, endSeconds, e)}
-        >
-          <span className="mr-1 text-[9px]">▶</span> {timeLabel}
-        </button>
-      )
-    });
-  }
-
-  // Find PDF Pages
-  let pMatch;
-  while ((pMatch = pdfPageRegex.exec(text)) !== null) {
-    if (matches.some(m => pMatch!.index >= m.index && pMatch!.index < m.index + m.length)) continue;
-
-    const fileName = pMatch[1].trim();
-    const pageNum = parseInt(pMatch[2], 10);
-    const exactQuote = pMatch[3]?.trim();
-
-    // Extract preceding text as search query fallback
-    const snippetBefore = text.substring(Math.max(0, pMatch.index - 150), pMatch.index);
-    let fallbackQuery = snippetBefore
-      .split(/(?:\n|\.\s|\?\s|\!\s)/) // split by newlines or sentence endings
-      .pop()?.trim()
-      .replace(/^["'\s]+|["'\s]+$/g, '') // Remove trailing/leading quotes
-      .replace(/[*_~`]/g, "") || undefined;
-
-    // If fallback is too long, trim to last 8 words
-    if (fallbackQuery && fallbackQuery.split(' ').length > 8) {
-      fallbackQuery = fallbackQuery.split(' ').slice(-8).join(' ');
-    }
-
-    const searchQuery = exactQuote || fallbackQuery;
-
-    matches.push({
-      index: pMatch.index,
-      length: pMatch[0].length,
-      content: (
-        <button
-          key={`pdf-${pMatch.index}`}
-          type="button"
-          className="mx-1 inline-flex items-center rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
-          onClick={() => onPdfClick && onPdfClick(fileName, pageNum, searchQuery)}
-        >
-          <IconFileText className="mr-1 h-3 w-3" /> {fileName} | Page {pageNum}
-        </button>
-      )
-    });
-  }
-
-  // Find Known Filenames
-  if (knownFilesRegex) {
-    let kMatch;
-    while ((kMatch = knownFilesRegex.exec(text)) !== null) {
-      if (matches.some(m => kMatch!.index >= m.index && kMatch!.index < m.index + m.length)) continue;
-
-      matches.push({
-        index: kMatch.index,
-        length: kMatch[0].length,
-        content: (
-          <span
-            key={`file-k-${kMatch.index}`}
-            className="mx-0.5 rounded-none bg-white/10 border border-white/30 px-1.5 py-0.5 font-mono text-[12px] font-bold text-white shadow-sm"
-          >
-            {kMatch[1]}
-          </span>
-        )
-      });
-    }
-  }
-
-  // Find Fallback Filenames
-  let fMatch;
-  while ((fMatch = fallbackFileRegex.exec(text)) !== null) {
-    if (matches.some(m => fMatch!.index >= m.index && fMatch!.index < m.index + m.length)) continue;
-
-    matches.push({
-      index: fMatch.index,
-      length: fMatch[0].length,
-      content: (
-        <span
-          key={`file-${fMatch.index}`}
-          className="mx-0.5 rounded-none bg-white/10 border border-white/30 px-1.5 py-0.5 font-mono text-[12px] font-bold text-white shadow-sm"
-        >
-          {fMatch[0]}
-        </span>
-      )
-    });
-  }
-
-  // Sort matches by index
-  matches.sort((a, b) => a.index - b.index);
-
-  // Build the final parts array
-  matches.forEach(match => {
-    if (match.index > lastIndex) {
-      parts.push(text.substring(lastIndex, match.index));
-    }
-    parts.push(match.content);
-    lastIndex = match.index + match.length;
-  });
-
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
-  }
-
-  return parts.length === 0 ? text : parts;
-};
-
-const processMarkdownChildren = (children: React.ReactNode, fileNames: string[] = [], onPdfClick?: (name: string, page: number, query?: string) => void): React.ReactNode => {
-  if (typeof children === "string") {
-    return renderTextWithEnhancements(children, fileNames, onPdfClick);
-  }
-  if (Array.isArray(children)) {
-    return children.map((child, i) => <Fragment key={i}>{processMarkdownChildren(child, fileNames, onPdfClick)}</Fragment>);
-  }
-  return children;
-};
-
-interface AttachedFile {
+export interface AttachedFile {
   file: File;
   status: "uploading" | "uploaded" | "error";
   serverInfo?: UploadedFileInfo;
   error?: string;
 }
 
-const CodeBlock = ({ language, value }: { language: string; value: string }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="my-4 overflow-hidden rounded-none border border-white/20 text-[13px] bg-black shadow-[4px_4px_0px_0px_rgba(255,255,255,0.05)]">
-      <div className="flex items-center justify-between border-b border-white/10 bg-neutral-900/50 px-4 py-2 text-xs font-bold uppercase tracking-widest text-neutral-400">
-        <span className="font-mono">{language}</span>
-        <button onClick={handleCopy} className="flex items-center gap-1.5 hover:text-white transition-colors" type="button">
-          {copied ? <Check className="h-3.5 w-3.5 text-white" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? "Copied!" : "Copy code"}
-        </button>
-      </div>
-      <SyntaxHighlighter
-        style={vscDarkPlus}
-        language={language}
-        PreTag="div"
-        customStyle={{
-          margin: 0,
-          padding: "1.25rem",
-          backgroundColor: "transparent",
-          fontSize: "13px",
-          lineHeight: "1.6",
-        }}
-      >
-        {value}
-      </SyntaxHighlighter>
-    </div>
-  );
-};
-
-const MessageActionToolbar = ({ text, isHuman }: { text: string; isHuman?: boolean }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className={`mt-0.5 flex items-center gap-2 text-neutral-500 transition-opacity duration-200 ${isHuman ? "opacity-100 sm:opacity-0 sm:group-hover:opacity-100" : "opacity-100"}`}>
-      <button
-        onClick={handleCopy}
-        className="flex items-center justify-center rounded p-1 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
-        title="Copy message"
-        type="button"
-      >
-        {copied ? <Check className="h-4 w-4 text-white" /> : <Copy className="h-4 w-4" />}
-      </button>
-    </div>
-  );
-};
-
-interface ChatSessionItemProps {
-  session: ChatSession;
-  isActive: boolean;
-  menuOpenSessionId: string | null;
-  setMenuOpenSessionId: (id: string | null) => void;
-  onSessionClick: (session: ChatSession) => void;
-  onRenameSubmit: (sessionId: string, newTitle: string) => Promise<void>;
-  onDelete: (sessionId: string) => Promise<void>;
-  menuRef: React.RefObject<HTMLDivElement | null>;
-}
-
-const ChatSessionItem = ({
-  session,
-  isActive,
-  menuOpenSessionId,
-  setMenuOpenSessionId,
-  onSessionClick,
-  onRenameSubmit,
-  onDelete,
-  menuRef,
-}: ChatSessionItemProps) => {
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [tempTitle, setTempTitle] = useState(session.title);
-  const isMenuOpen = menuOpenSessionId === session.session_id;
-  const inputRef = useRef<HTMLInputElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    setTempTitle(session.title);
-  }, [session.title]);
-
-  useEffect(() => {
-    if (isRenaming) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      }, 50);
-    }
-  }, [isRenaming]);
-
-  useEffect(() => {
-    if (!isRenaming) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (formRef.current && !formRef.current.contains(e.target as Node)) {
-        setIsRenaming(false);
-        setTempTitle(session.title);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isRenaming, session.title]);
-
-  const handleLocalSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = tempTitle.trim();
-    setIsRenaming(false);
-    onRenameSubmit(session.session_id, trimmed);
-  };
-
-  return (
-    <div className="group/session relative">
-      {isRenaming ? (
-        <form
-          ref={formRef}
-          className="flex items-center gap-1 px-2 py-1.5"
-          onSubmit={handleLocalSubmit}
-        >
-          <input
-            ref={inputRef}
-            className="flex-1 min-w-0 rounded-md border border-neutral-600 bg-neutral-800 px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500 transition-colors"
-            value={tempTitle}
-            onChange={(e) => setTempTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setIsRenaming(false);
-                setTempTitle(session.title);
-              }
-            }}
-          />
-        </form>
-      ) : (
-        <div className={`flex w-full items-center rounded-lg transition-all duration-200 ${isActive
-          ? "bg-[#2f2f2f] text-white shadow-sm"
-          : "text-neutral-400 hover:bg-neutral-800/40 hover:text-neutral-200"
-          }`}>
-          <button
-            type="button"
-            onClick={() => onSessionClick(session)}
-            className={`flex-1 min-w-0 px-2 py-2 pr-8 text-left text-sm outline-none focus:outline-none ${isActive ? "font-medium" : ""}`}
-          >
-            <span className="line-clamp-1">{session.title}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`absolute right-1.5 shrink-0 p-1 text-neutral-500 transition hover:text-white group-hover/session:opacity-100 ${isActive || isMenuOpen ? "opacity-100" : "opacity-0"
-              }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setMenuOpenSessionId(isMenuOpen ? null : session.session_id);
-            }}
-          >
-            <IconDots className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {isMenuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute right-1 top-9 z-50 w-36 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl animate-in fade-in slide-in-from-top-1"
-        >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-300 transition hover:bg-neutral-800 hover:text-white"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsRenaming(true);
-              setMenuOpenSessionId(null);
-            }}
-          >
-            <IconPencil className="h-4 w-4" />
-            Rename
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-400 transition hover:bg-neutral-800 hover:text-red-300"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onDelete(session.session_id);
-              setMenuOpenSessionId(null);
-            }}
-          >
-            <IconTrash className="h-4 w-4" />
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 export default function ChatPage() {
   const [open, setOpen] = useState(window.innerWidth >= 768);
@@ -975,6 +562,81 @@ export default function ChatPage() {
         setIsUploading(false);
         uploadAbortControllerRef.current = null;
         if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [tempId, attachedFiles]
+  );
+
+  const handleRetryUpload = useCallback(
+    async (indexToRetry: number) => {
+      const fileToRetry = attachedFiles[indexToRetry].file;
+      
+      const existingFiles = attachedFiles.filter(
+        (af) => af.status === "uploaded"
+      );
+
+      setAttachedFiles((prev) => {
+        const next = [...prev];
+        next[indexToRetry] = { file: fileToRetry, status: "uploading" };
+        return next;
+      });
+      setIsUploading(true);
+
+      const allFiles = [
+        ...existingFiles.map((af) => af.file),
+        fileToRetry,
+      ];
+
+      const controller = new AbortController();
+      uploadAbortControllerRef.current = controller;
+
+      try {
+        const response = await uploadFiles(allFiles, tempId, controller.signal);
+
+        if (response.success) {
+          setTempId(response.temp_id);
+          tempIdSentRef.current = false;
+
+          setAttachedFiles(prev => {
+            const next = [...prev];
+            let dataIdx = 0;
+            return next.map((af, idx) => {
+              if (af.status === "uploaded" || idx === indexToRetry) {
+                return {
+                  ...af,
+                  status: "uploaded",
+                  serverInfo: response.data[dataIdx++]
+                };
+              }
+              return af;
+            });
+          });
+        }
+      } catch (err: unknown) {
+        // @ts-ignore
+        if (err?.name === "CanceledError" || err?.message === "canceled" || err?.code === "ERR_CANCELED") {
+          setAttachedFiles(prev => {
+            const next = [...prev];
+            next[indexToRetry] = { ...next[indexToRetry], status: "error" };
+            return next;
+          });
+          return;
+        }
+
+        const message = err instanceof Error ? err.message : "Upload failed";
+        showToast.error(message);
+        setAttachedFiles(prev => {
+          const next = [...prev];
+          next[indexToRetry] = {
+            file: fileToRetry,
+            status: "error",
+            error: message,
+          };
+          return next;
+        });
+      } finally {
+        setIsUploading(false);
+        uploadAbortControllerRef.current = null;
       }
     },
     [tempId, attachedFiles]
@@ -1774,12 +1436,19 @@ export default function ChatPage() {
                             }`}
                         >
                           {/* Icon Box */}
-                          <div className={cn(
-                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/5 text-white shadow-sm",
-                            af.status === "uploading" ? "bg-neutral-900" : "bg-white/5"
-                          )}>
+                          <div
+                            className={cn(
+                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/5 text-white shadow-sm transition-colors",
+                              af.status === "uploading" ? "bg-neutral-900" : "bg-white/5",
+                              af.status === "error" && "cursor-pointer hover:bg-neutral-800 hover:border-red-500/50"
+                            )}
+                            onClick={af.status === "error" ? () => handleRetryUpload(idx) : undefined}
+                            title={af.status === "error" ? "Retry upload" : undefined}
+                          >
                             {af.status === "uploading" ? (
                               <IconLoader2 className="h-5 w-5 animate-spin" />
+                            ) : af.status === "error" ? (
+                              <IconRefresh className="h-5 w-5 text-red-400" />
                             ) : (
                               icon
                             )}
@@ -1795,15 +1464,17 @@ export default function ChatPage() {
                             </span>
                           </div>
 
-                          {/* Remove Button */}
-                          <button
-                            className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-white border border-white/10 transition-all hover:bg-neutral-800"
-                            onClick={() => handleRemoveSingleFile(idx)}
-                            type="button"
-                            aria-label={`Remove ${af.file.name}`}
-                          >
-                            <IconX className="h-3 w-3" />
-                          </button>
+                          {/* Actions */}
+                          <div className="absolute right-1 top-1 flex items-center gap-1">
+                            <button
+                              className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-white border border-white/10 transition-all hover:bg-neutral-800"
+                              onClick={() => handleRemoveSingleFile(idx)}
+                              type="button"
+                              aria-label={`Remove ${af.file.name}`}
+                            >
+                              <IconX className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
