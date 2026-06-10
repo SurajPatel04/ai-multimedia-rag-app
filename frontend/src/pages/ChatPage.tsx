@@ -1,28 +1,23 @@
-import React, { useCallback, useEffect, useRef, useState, Fragment } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+
 import ragIcon from "@/assets/rag.png";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowDown, Copy, Check, FileVideo, FileText, FileSpreadsheet, File } from "lucide-react";
+import { ArrowDown, FileVideo, FileText, FileSpreadsheet, File } from "lucide-react";
 import {
   IconArrowLeft,
   IconBrandGithub,
-  IconDots,
   IconFile,
-  IconFileText,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLoader2,
   IconMessage,
   IconMusic,
   IconPaperclip,
-  IconPencil,
   IconPlus,
-  IconTrash,
   IconVideo,
   IconX,
   IconRefresh,
@@ -44,7 +39,7 @@ import {
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { showToast } from "@/lib/toast";
 import { PdfViewerModal } from "@/components/PdfViewerModal";
-import { handlePlayMedia, processMarkdownChildren } from "@/components/chat/MarkdownUtils";
+import { processMarkdownChildren } from "@/components/chat/MarkdownUtils";
 import { CodeBlock } from "@/components/chat/CodeBlock";
 import { MessageActionToolbar } from "@/components/chat/MessageActionToolbar";
 import { ChatSessionItem } from "@/components/chat/ChatSessionItem";

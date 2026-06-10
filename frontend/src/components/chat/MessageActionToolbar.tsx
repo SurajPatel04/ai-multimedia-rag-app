@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 export const MessageActionToolbar = ({ text, isHuman }: { text: string; isHuman?: boolean }) => {
