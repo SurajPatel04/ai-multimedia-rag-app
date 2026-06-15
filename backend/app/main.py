@@ -3,7 +3,9 @@ from app.core.db import init_db
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from app.core.exception_handler import add_exception_handlers
+from app.core.config import settings
 from langchain_community.vectorstores import FAISS
 
 from app.router.auth import router as auth_router
@@ -42,6 +44,9 @@ app.add_middleware(
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+
+# SessionMiddleware is required by authlib for Google OAuth state management
+app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):

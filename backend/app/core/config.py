@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     SUPABASE_URL: str
     REDIS_URL: str
+    GOOGLE_CLIENT_ID: str
+    GOOGLE_CLIENT_SECRET: str
+    FRONTEND_URL: str = "http://localhost:5173"
+    SESSION_SECRET: str = "change-me-to-a-real-secret"
 
     model_config = SettingsConfigDict(
         env_file=".env",
