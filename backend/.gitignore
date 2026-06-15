@@ -18,3 +18,9 @@ faiss_indexes/
 # Optional
 *.faiss
 *.pkl
+
+
+# Results and Files
+results/
+benchmark_responses.txt
+TestFiles/
