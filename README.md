@@ -30,6 +30,82 @@ InsightFlow is a full-stack, production-grade AI Retrieval-Augmented Generation 
 
 ![RAG System Workflow Architecture](RAG_System_Workflow.png)
 
+### Interactive System Flowchart
+
+```mermaid
+flowchart TD
+    %% Styling Definitions
+    classDef startEnd fill:#1e1e2e,stroke:#cba6f7,stroke-width:2px,color:#cdd6f4;
+    classDef process fill:#181825,stroke:#89b4fa,stroke-width:1.5px,color:#cdd6f4;
+    classDef router fill:#313244,stroke:#f9e2af,stroke-width:1.5px,color:#cdd6f4;
+    classDef action fill:#11111b,stroke:#a6e3a1,stroke-width:2px,color:#cdd6f4;
+    classDef database fill:#1e1e2e,stroke:#f5c2e7,stroke-width:1.5px,color:#cdd6f4;
+
+    %% Nodes
+    Upload([User Uploads File]) --> Ingest[Ingestion Pipeline]
+    
+    %% Ingestion
+    subgraph Ingestion ["1. Upload & Ingestion Phase"]
+        Ingest --> TypeCheck{File Type?}
+        TypeCheck -- Document --> TextExtract[Extract & Chunk Text]
+        TypeCheck -- Audio/Video --> Transcribe[Deepgram Transcription]
+        Transcribe --> TimestampExtract[Extract Timestamped Utterances]
+        
+        TextExtract --> TempMongo[(MongoDB Temp Storage)]
+        TimestampExtract --> TempMongo
+        TempMongo --> Supabase[Save to Supabase Storage]
+    end
+
+    %% Confirmation / Cancellation
+    Supabase --> ConfirmCheck{User Action?}
+    ConfirmCheck -- Cancel --> Cleanup[Cleanup Endpoint]
+    Cleanup --> CleanDB[Delete Temp MongoDB & Supabase Files]
+    ConfirmCheck -- Confirm --> ParallelProc[Parallel Processing]
+
+    %% Parallel Processing
+    subgraph Parallel ["2. Parallel Processing Phase"]
+        ParallelProc --> EmbedBranch[Branch A: Vector Indexing]
+        ParallelProc --> SessionBranch[Branch B: Session Persistence]
+
+        EmbedBranch --> GenEmbed[Generate Embeddings <br/><i>Gemini / OpenAI</i>]
+        GenEmbed --> FaissSave[(FAISS Vector Store)]
+
+        SessionBranch --> GenSummary{File Length?}
+        GenSummary -- Short (<6k) --> SingleSummary[Single-pass Summary]
+        GenSummary -- Long (>6k) --> ChunkSummary[Two-pass Chunked Summary]
+        SingleSummary --> SaveSession[(MongoDB Session Record)]
+        ChunkSummary --> SaveSession
+    end
+
+    %% Querying & RAG
+    SaveSession --> QueryInit[User Query Received]
+    FaissSave --> QueryInit
+
+    subgraph RAG ["3. Semantic Query & RAG Phase"]
+        QueryInit --> CacheCheck{Redis Semantic Cache <br/><i>Similarity ≥ 95%?</i>}
+        CacheCheck -- Yes (Hit) --> StreamCache[Stream Cached Response via SSE]
+        CacheCheck -- No (Miss) --> Retrieve[Retrieve Chunks from FAISS]
+        
+        Retrieve --> LangGraphNode[LangGraph Agentic RAG]
+        LangGraphNode --> MemoryCheck{Token/Message <br/>Limit Exceeded?}
+        MemoryCheck -- Yes --> CondenseHistory[Condense History via Summarization Node]
+        MemoryCheck -- No --> CallLLM[Generate Grounded Response]
+        CondenseHistory --> CallLLM
+    end
+
+    %% Output
+    CallLLM --> StreamSSE[Stream Response via SSE <br/><i>Tokens + Citations + Cost</i>]
+    StreamSSE --> END([End Turn])
+    StreamCache --> END
+
+    %% Apply Styles
+    class Upload,END startEnd;
+    class Ingest,TextExtract,Transcribe,TimestampExtract,Cleanup,CleanDB,GenEmbed,SingleSummary,ChunkSummary,Retrieve,CondenseHistory,CallLLM process;
+    class TypeCheck,ConfirmCheck,GenSummary,CacheCheck,MemoryCheck router;
+    class StreamCache,StreamSSE action;
+    class TempMongo,Supabase,FaissSave,SaveSession database;
+```
+
 ---
 
 ## 🌟 Key Features
