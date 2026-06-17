@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
     SESSION_SECRET: str = "change-me-to-a-real-secret"
+    DOMAIN: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(
         env_file=".env",
