@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     SESSION_SECRET: str = "change-me-to-a-real-secret"
     DOMAIN: str = "http://localhost:8000"
+    LANGCHAIN_TRACING_V2: str = "false"
+    LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGCHAIN_API_KEY: str = ""
+    LANGCHAIN_PROJECT: str = "rag_project"
 
     model_config = SettingsConfigDict(
         env_file=".env",
