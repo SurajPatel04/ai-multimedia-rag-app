@@ -269,8 +269,8 @@ async def refresh(request: Request):
 @router.get("/google/login")
 async def google_login(request: Request):
     """Redirect the user to Google's OAuth consent screen."""
-    redirect_uri = request.url_for("google_callback")
-    return await oauth.google.authorize_redirect(request, str(redirect_uri))
+    redirect_uri = f"{settings.DOMAIN}/api/v1/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
 @router.get("/google/callback")
